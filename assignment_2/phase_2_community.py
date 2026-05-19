@@ -289,17 +289,24 @@ class Lab2Community(Community, PeerObserver):
             # Search through all peers
             print(f"Amount of current known peers: {len(self.get_peers())}")
             for peer in self.get_peers():
-                if self._server_peer is None:
-                    if peer.public_key.key_to_bin() == self._server_pk:
-                        self._cache_server(peer)
-                        break
+                print(f"Peer address: {peer.address},\nhex: {peer.mid.hex()},\npk: {peer.public_key.key_to_bin().hex()}")
+                try:
+                    if self._server_peer is None:
+                        if peer.public_key.key_to_bin() == self._server_pk:
+                            self._cache_server(peer)
+                            break
+                except Exception:
+                    continue
 
                 if len(self._teammate_peers) < 2:
-                    key = peer.public_key.key_to_bin()
-                    if key in self._member_keys and key != self._member_keys[self._my_index]:
-                        idx = self._member_keys.index(key)
-                        if idx not in self._teammate_peers:
-                            self._cache_teammate(peer, key)
+                    try:
+                        key = peer.public_key.key_to_bin()
+                        if key in self._member_keys and key != self._member_keys[self._my_index]:
+                            idx = self._member_keys.index(key)
+                            if idx not in self._teammate_peers:
+                                self._cache_teammate(peer, key)
+                    except Exception:
+                        continue
 
             await asyncio.sleep(5)
 

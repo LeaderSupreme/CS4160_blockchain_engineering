@@ -13,6 +13,14 @@ from ipv8.configuration import ConfigBuilder, Strategy, WalkerDefinition, Bootst
 from ipv8_service import IPv8
 from ipv8.util import run_forever
 
+class _UnsupportedCurveFilter(logging.Filter):
+    """Prevent the stream of not supported curve errors"""
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "Curve" not in record.getMessage() and "is not supported" not in record.getMessage()
+
+logging.getLogger("Lab2Community").addFilter(_UnsupportedCurveFilter())
+logging.basicConfig(level=logging.DEBUG)
+
 
 KEY_FILE  = Path("assignment_1", "key.pem")
 GROUP_ID  = "5c0303d6e952c77d"
@@ -46,7 +54,7 @@ async def _run() -> None:
             "Lab2Community",
             "my_peer",
             [WalkerDefinition(Strategy.RandomWalk, 30, {"timeout": 5.0})],
-            default_bootstrap_defs + [BootstrapperDefinition(Bootstrapper.UDPBroadcastBootstrapper, {})],
+            default_bootstrap_defs,
             {
                 "community_id": COMMUNITY_ID,
                 "group_id": GROUP_ID,
@@ -55,6 +63,7 @@ async def _run() -> None:
                 "server_pk": SERVER_PUBLIC_KEY
             }, 
             [("run_all_rounds",)],
+            False 
         )
         .finalize()
     )
