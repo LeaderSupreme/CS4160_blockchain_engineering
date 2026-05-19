@@ -18,8 +18,6 @@ from ipv8.util import run_forever
 
 KEY_FILE  = Path("assignment_1", "key.pem")
 GROUP_ID  = "5c0303d6e952c77d"
- 
-MY_INDEX  = 0 # own position in the list below (0, 1, or 2)
 MEMBER_KEYS: List[bytes] = [  # Faizel, Daniel, Ruben
     b'LibNaCLPK:*Q\xc3\xf7\xaa\x87]#NS\x0cL\xa8\xba\xe4pb\xaf\x82\xdd\x1bE\xb2&\xf8\xfc\x81e\xce\xbc\x91\n8\xfcJ\x92\xd5\xccq\xc0\xdf\xd8\x85\xebr\xa1\x06,ve\xe9yQN\xeewe\x9b\x84\xaeLd\xf6V', 
     b'LibNaCLPK:\xee\xe1\xefN\xf0\xb0&\xf4\xb7]#\x10\x9e\x16\x87\xbb\x86%%\xdeG"\xd2\x86\xb2\xb5\xf7:\x04\xee\x078n\xd8\xf8)\xbd\xbb8\x13;\xb5\xd0D\xa0\x95\x94\xb97\xdd>&\x8a\rf\x8f >\xdf\xd4.c\x0c\xa6', 
@@ -35,6 +33,7 @@ def _require_env(key: str) -> str:
 
 COMMUNITY_ID      = bytes.fromhex(_require_env("COMMUNITY_ID_ASS2"))
 SERVER_PUBLIC_KEY = bytes.fromhex(_require_env("SERVER_PUBLIC_KEY_ASS2"))
+MY_INDEX = int(_require_env("MY_INDEX"))
  
 async def _run() -> None:
     config = (
@@ -45,10 +44,8 @@ async def _run() -> None:
         .add_overlay(
             "Lab2Community",
             "my_peer",
-            [WalkerDefinition(Strategy.RandomWalk, 20, {"timeout": 3.0})],
-            default_bootstrap_defs + [
-                BootstrapperDefinition(Bootstrapper.UDPBroadcastBootstrapper, {})
-            ],
+            [WalkerDefinition(Strategy.RandomWalk, 30, {"timeout": 3.0})],
+            default_bootstrap_defs + [BootstrapperDefinition(Bootstrapper.UDPBroadcastBootstrapper, {})],
             {
                 "community_id": COMMUNITY_ID,
                 "group_id": GROUP_ID,
@@ -67,7 +64,7 @@ async def _run() -> None:
  
 if __name__ == "__main__":
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.DEBUG,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
     asyncio.run(_run())

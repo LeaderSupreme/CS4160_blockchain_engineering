@@ -11,7 +11,7 @@ from ipv8.peer import Peer
 from ipv8.community import Community, CommunitySettings
 from ipv8.keyvault.keys import PrivateKey
 from ipv8.lazy_community import lazy_wrapper
-from ipv8.peerdiscovery.network import Network
+from ipv8.peerdiscovery.network import PeerObserver 
 from ipv8.messaging.payload_dataclass import DataClassPayload
 
 logger = logging.getLogger("Lab2")
@@ -35,8 +35,6 @@ class RoundResultPayload(DataClassPayload[6]):
     round_number: int
     rounds_completed: int
     message: str
-
-
 
 class NonceBroadcastPayload(DataClassPayload[91]):
     """Peer sharing the nonce for the current round number"""
@@ -70,7 +68,7 @@ class Lab2Settings(CommunitySettings):
     member_keys: List[bytes] = field(default_factory=list)
     my_index: int = 0
 
-class Lab2Community(Community):
+class Lab2Community(Community, PeerObserver):
     ROUND_TO_SUBMITTER: Dict[int, int] = {1: 0, 2: 1, 3: 2}
 
     def __init__(self, settings: Lab2Settings) -> None:
@@ -105,6 +103,27 @@ class Lab2Community(Community):
         self._signing_key: PrivateKey = cast(PrivateKey, self.my_peer.key) 
         logger.info("Lab2Community ready | group=%s | my_index=%d", settings.group_id, settings.my_index)
 
+    def on_peer_added(self, peer: Peer) -> None:
+        print(f"Peer added to community: {peer}")
+        try:
+            key = peer.public_key.key_to_bin()
+        except Exception as e:
+            print(f"Could not read key as bin: {e}")
+            return None
+
+        if key == bytes.fromhex(self._server_pk):
+            print(" SERVER PEER DISCOVERED")
+            self._cache_server(peer)
+
+        elif key in self._member_keys:
+            print(" MEMBER KEY FOUND") 
+            self._cache_teammate(peer, key)
+        return None
+
+    def on_peer_removed(self, peer: Peer) -> None:
+        print(f"Peer left community: {peer}")
+        return None
+        
     async def run_all_rounds(self) -> None:
         loop = asyncio.get_event_loop()
         for rn in (1, 2, 3):
@@ -258,28 +277,28 @@ class Lab2Community(Community):
         if fut and not fut.done():
             fut.set_result(payload.signature)
 
-    async def _discover_all_peers(self, timeout: float = 30.0) -> None:
+    async def _discover_all_peers(self, timeout: float = 600.0) -> None:
         deadline = time.time() + timeout
         while not self._my_cache_ready:
             if time.time() > deadline:
                 raise RuntimeError("Could not discover all peers within %.1f s" % timeout)
 
             # Search through all peers
+            print(f"Amount of current known peers: {len(self.get_peers())}")
             for peer in self.get_peers():
                 if self._server_peer is None:
                     if peer.public_key.key_to_bin() == self._server_pk:
                         self._cache_server(peer)
                         break
 
-                elif len(self._teammate_peers) < 2:
-                    for peer in self.get_peers():
-                        key = peer.public_key.key_to_bin()
-                        if key in self._member_keys and key != self._member_keys[self._my_index]:
-                            idx = self._member_keys.index(key)
-                            if idx not in self._teammate_peers:
-                                self._cache_teammate(peer, key)
+                if len(self._teammate_peers) < 2:
+                    key = peer.public_key.key_to_bin()
+                    if key in self._member_keys and key != self._member_keys[self._my_index]:
+                        idx = self._member_keys.index(key)
+                        if idx not in self._teammate_peers:
+                            self._cache_teammate(peer, key)
 
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(5)
 
     async def _readiness_handshake(self, timeout: float = 30.0) -> None:
         deadline = time.time() + timeout
