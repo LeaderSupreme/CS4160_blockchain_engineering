@@ -9,8 +9,6 @@ from dotenv import load_dotenv
 
 from phase_2_community import Lab2Community
 
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-
 from ipv8.configuration import ConfigBuilder, Strategy, WalkerDefinition, BootstrapperDefinition, Bootstrapper, default_bootstrap_defs
 from ipv8_service import IPv8
 from ipv8.util import run_forever
@@ -31,8 +29,11 @@ def _require_env(key: str) -> str:
         sys.exit(f"ERROR: environment variable {key!r} is not set in .env")
     return value
 
-COMMUNITY_ID      = bytes.fromhex(_require_env("COMMUNITY_ID_ASS2"))
-SERVER_PUBLIC_KEY = bytes.fromhex(_require_env("SERVER_PUBLIC_KEY_ASS2"))
+COMMUNITY_ID=bytes.fromhex("4c61623247726f75705369676e696e6732303236")
+SERVER_PUBLIC_KEY= bytes.fromhex("4c69624e61434c504b3a82e33614a342774e084af80835838d6dbdb64a537d3ddb6c1d82011a7f101553cda40cf5fa0e0fc23abd0a9c4f81322282c5b34566f6b8401f5f683031e60c96")
+
+# COMMUNITY_ID      = bytes.fromhex(_require_env("COMMUNITY_ID_ASS2"))
+# SERVER_PUBLIC_KEY = bytes.fromhex(_require_env("SERVER_PUBLIC_KEY_ASS2"))
 MY_INDEX = int(_require_env("MY_INDEX"))
  
 async def _run() -> None:
@@ -44,7 +45,7 @@ async def _run() -> None:
         .add_overlay(
             "Lab2Community",
             "my_peer",
-            [WalkerDefinition(Strategy.RandomWalk, 30, {"timeout": 3.0})],
+            [WalkerDefinition(Strategy.RandomWalk, 30, {"timeout": 5.0})],
             default_bootstrap_defs + [BootstrapperDefinition(Bootstrapper.UDPBroadcastBootstrapper, {})],
             {
                 "community_id": COMMUNITY_ID,

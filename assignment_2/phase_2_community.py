@@ -70,10 +70,11 @@ class Lab2Settings(CommunitySettings):
 
 class Lab2Community(Community, PeerObserver):
     ROUND_TO_SUBMITTER: Dict[int, int] = {1: 0, 2: 1, 3: 2}
+    community_id = bytes.fromhex("4c61623247726f75705369676e696e6732303236")
 
     def __init__(self, settings: Lab2Settings) -> None:
-        self.community_id = settings.community_id
         super().__init__(settings)
+        self.community_id = settings.community_id
 
         self._group_id = settings.group_id
         self._my_index = settings.my_index
@@ -111,7 +112,7 @@ class Lab2Community(Community, PeerObserver):
             print(f"Could not read key as bin: {e}")
             return None
 
-        if key == bytes.fromhex(self._server_pk):
+        if key == self._server_pk:
             print(" SERVER PEER DISCOVERED")
             self._cache_server(peer)
 
@@ -123,8 +124,9 @@ class Lab2Community(Community, PeerObserver):
     def on_peer_removed(self, peer: Peer) -> None:
         print(f"Peer left community: {peer}")
         return None
-        
+
     async def run_all_rounds(self) -> None:
+        self.network.add_peer_observer(self)
         loop = asyncio.get_event_loop()
         for rn in (1, 2, 3):
             state = RoundState(round_number=rn)
@@ -278,6 +280,7 @@ class Lab2Community(Community, PeerObserver):
             fut.set_result(payload.signature)
 
     async def _discover_all_peers(self, timeout: float = 600.0) -> None:
+        self.network.add_peer_observer(self)
         deadline = time.time() + timeout
         while not self._my_cache_ready:
             if time.time() > deadline:
