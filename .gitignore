@@ -12,3 +12,5 @@ wheels/
 **/.env
 **/**.pem
 nonce.txt
+
+/.vscode
