@@ -7,6 +7,7 @@
 - Transaction fees / Coinbase
 - Persistent chain?
 - More intelligent way to keep track of forks (tree?)
+- Dependency tracking in Mempool for order of mining
 
 ## Run tests
 
