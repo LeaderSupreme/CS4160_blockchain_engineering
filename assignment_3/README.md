@@ -5,6 +5,8 @@
 - Dynamic difficulty
 - Merkle tree for `txs_hash`
 - Transaction fees / Coinbase
+- Persistent chain?
+- More intelligent way to keep track of forks (tree?)
 
 ## Run tests
 

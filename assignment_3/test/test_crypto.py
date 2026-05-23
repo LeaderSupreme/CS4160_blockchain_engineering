@@ -1,11 +1,10 @@
 import pytest
-import struct
 import hashlib
 
 from ..crypto import (
     compute_txs_hash, count_leading_zero_bits, hash_header,
     hash_transaction, mine_block, serialize_header, 
-    satisfies_pow, sha256, deserialize_header, HEADER_STRUCT,
+    satisfies_pow, sha256, deserialize_header,
 )
 
 
