@@ -5,4 +5,5 @@ requires-python = ">=3.12"
 dependencies = [
     "dotenv>=0.9.9",
     "pyipv8>=3.2.0",
+    "pytest>=9.0.3",
 ]
