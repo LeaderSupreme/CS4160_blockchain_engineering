@@ -22,7 +22,7 @@ class RegisteringCommunity(Community):
  
     def __init__(self, settings):
         super().__init__(settings)
-        self._trusted_peers = TrustedPeers()
+        self._trusted_peers = settings.trusted_peers
         self.server_peer = None
         self.submitted = False
 

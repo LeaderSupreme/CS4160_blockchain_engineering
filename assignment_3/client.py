@@ -2,7 +2,12 @@ import logging
 import asyncio
 from pathlib import Path
 
-from .config import PERSONAL_KEY_FILE
+from assignment_3.chain import Blockchain, make_genesis_block
+from assignment_3.difficulty import FixedDifficultyPolicy
+from assignment_3.mempool import Mempool
+from assignment_3.peers import TrustedPeers
+
+from .config import PERSONAL_KEY_FILE, DIFFICULTY
 from assignment_3.blockchain_community import BlockchainCommunity
 from assignment_3.registering_community import RegisteringCommunity
  
@@ -20,6 +25,12 @@ logging.basicConfig(level=logging.DEBUG)
 
 async def main():
     key_path = Path(PERSONAL_KEY_FILE)
+
+    blockchain = Blockchain(make_genesis_block(DIFFICULTY))
+    mempool = Mempool(max_size=1000)
+    trusted_peers = TrustedPeers()
+    difficulty_policy = FixedDifficultyPolicy()
+    
  
     builder = ConfigBuilder()
     builder.clear_keys()
@@ -30,7 +41,12 @@ async def main():
         "my peer",
         [WalkerDefinition(Strategy.RandomWalk, 20, {"timeout": 5.0})],
         default_bootstrap_defs,
-        {},
+        {
+            "chain": blockchain,
+            "mempool": mempool,
+            "trusted_peers": trusted_peers,
+            "difficulty_policy": difficulty_policy
+        },
         [],
         False,
     )
@@ -43,6 +59,7 @@ async def main():
         },
     )
  
+    # TODO mb choose 1 teammate to register, and the rest can just start blockchain community
     await ipv8.start()
     print("IPv8 started, waiting for server peer...\n")
  
