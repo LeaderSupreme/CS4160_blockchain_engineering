@@ -1,11 +1,13 @@
+from inspect import getblock
 import logging
+from socket import TCP_TX_DELAY
 import crypto
 
 from assignment_3.chain import Blockchain, Transaction
 from assignment_3.difficulty import DifficultyPolicy
 from assignment_3.mempool import Mempool
 from assignment_3.miner import Miner
-from assignment_3.payloads import ChainHeightResponse, GetChainHeight, SubmitTransaction, SubmitTransactionResponse
+from assignment_3.payloads import BlockResponse, ChainHeightResponse, GetBlock, GetChainHeight, SubmitTransaction, SubmitTransactionResponse
 from assignment_3.peers import TrustedPeers
 
 from .config import BLOCKCHAIN_COMMUNITY_ID
@@ -38,6 +40,7 @@ class BlockchainCommunity(Community):
         # Msg handlers
         self.add_message_handler(SubmitTransaction, self.on_submit_transaction)
         self.add_message_handler(GetChainHeight, self.on_get_chain_height)
+        self.add_message_handler(GetBlock, self.on_get_block)
     
     def started(self) -> None:
         # TODO start miner
@@ -136,4 +139,30 @@ class BlockchainCommunity(Community):
             )
         )
 
+
+    @lazy_wrapper(GetBlock)
+    def on_get_block(self, peer: Peer, payload: GetBlock) -> None:
+        """Handle a request for a block on a specific height"""
+        block = self._chain.get_block(payload.height)
+        if not block:
+            self.logger.warning(f"Couldnt find a block a requested height: {payload.height}")
+            return  # TODO no way to send failure right? mb other peers will have this height already
+        
+        tx_hashes = b"".join([transaction.tx_hash for transaction in block.transactions])
+        self.ez_send(
+            peer,
+            BlockResponse(
+                height=block.height,
+                prev_hash=block.prev_hash,
+                txs_hash=block.txs_hash,
+                timestamp=block.timestamp,
+                difficulty=block.difficulty,
+                nonce=block.nonce,
+                block_hash=block.block_hash,
+                tx_hashes=tx_hashes
+            )
+        )
+        self.logger.debug(f"Successfully returned requested block at height: {payload.height} to peer: {peer}")
+
+        
     
