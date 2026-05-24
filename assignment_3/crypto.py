@@ -38,14 +38,28 @@ def sha256(data: bytes) -> bytes:
 # Transaction functions
 # --------------------------------------
 # --------------------------------------
-# Transaction layout (84 bytes total)
+# Transaction layout (134+ bytes total)
 # --------------------------------------
-# Field
-# - sender_key (32 bytes)
-# - data       (arbitrary data)
-# - timestamp  (unix seconds, 8 bytes)
-# - signature  (sign combination of all 3 fields above)
+# Offset  Size   Field
+#   0      32    sender_key
+#  32       8    timestamp   (unix seconds)
+#  40      64    signature
+# 104      32    tx_hash
+# 134      ...   data        (arbitrary payload, is just the rest of the bytes)
 # --------------------------------------
+TX_STRUCT = struct.Struct(">32sQ64s32s")
+assert TX_STRUCT.size == 136
+
+def serialize_transaction(sender_key: bytes, timestamp: int, signature: bytes, tx_hash: bytes, data: bytes) -> bytes:
+    """Serialize an entire transaction, we add the unbounded data bytes at the end"""
+    return TX_STRUCT.pack(sender_key, timestamp, signature, tx_hash) + data
+
+def deserialize_transaction(raw: bytes) -> tuple[bytes, int, bytes, bytes, bytes]:
+    """Deserialize a transaction"""
+    sender_key, timestamp, signature, tx_hash = TX_STRUCT.unpack(raw[:TX_STRUCT.size])
+    data = raw[TX_STRUCT.size:]
+    return sender_key, timestamp, signature, tx_hash, data
+
 def hash_transaction(sender_key: bytes, data: bytes, timestamp: int, signature: bytes) -> bytes:
     """Hash a transaction, converts int timestamp to 8 byte binary representation"""
     timestamp_bytes = timestamp.to_bytes(8, "big")
