@@ -8,6 +8,8 @@
 - Persistent chain?
 - More intelligent way to keep track of forks (tree?)
 - Dependency tracking in Mempool for order of mining
+- Multi threaded mining, each thread can get his own nonce range
+- enable sharing the mempool, so if you submit one transaction to a node, all others also get it
 
 ## Run tests
 

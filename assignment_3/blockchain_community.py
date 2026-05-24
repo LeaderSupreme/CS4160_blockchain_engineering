@@ -1,6 +1,5 @@
-from inspect import getblock
+import asyncio
 import logging
-from socket import TCP_TX_DELAY
 import crypto
 
 from assignment_3.chain import Block, Blockchain, Transaction
@@ -32,9 +31,9 @@ class BlockchainCommunity(Community):
 
         # Thead safe miner, which can run in the background
         self._miner = Miner(
-            chain=self._chain,
             mempool=self._mempool,
-            difficulty_policy=self._difficulty_policy
+            difficulty_policy=self._difficulty_policy,
+            on_block_mined=self._on_block_mined_thread_safe
         )
         
         # Msg handlers
@@ -191,6 +190,7 @@ class BlockchainCommunity(Community):
             self.ez_send(peer, RequestBlock(payload.height))
             return
 
+        #TODO if this, or lower height, probably should be in forks (should we store it? we still assume longest chain is valid)
         elif payload.height == self._chain.height and not self._chain.contains(payload.block_hash):
             logger.info(f"Received block announcement from peer: {peer}, at same height: {payload.height}, but unkown hash. Possible fork.") 
             self.ez_send(peer, RequestBlock(payload.height))
@@ -258,14 +258,22 @@ class BlockchainCommunity(Community):
             self.logger.debug(f"Internal block response. Added block from peer {peer} to chain")
             adtopted = self.adopt_orphans()
             logger.info(f"Interal block resopnse: was able to adopt {len(adtopted)} orphans after this addition")
+
+            # Update the mining process to the new tip
+            self._mempool.remove_included([hash for tx in adtopted for hash in tx.tx_hashes])
+            self._mempool.remove_included(block.tx_hashes)
+            self._miner.mine(self._chain.tip)
+
             return
         
         #TODO probably should not be here
+        #TODO maybe should keep track of it in forks if not the case height whise
         if block.height > self._chain.height + 1:
             self._orphans[block.height] = block
             logger.info(f"Internal block response: from peer: {peer} was valid, but were unable to add to chain. incorrect height. "
                         f"our height: {self._chain.height}, block height: {block.height}. requesting previous block and added to orphans")
             self.ez_send(peer, RequestBlock(block.height-1))
+
 
     def adopt_orphans(self) -> list[Block]:
         """Try to adopt orphans from the current pool"""
@@ -280,5 +288,35 @@ class BlockchainCommunity(Community):
 
             adopted.append(orphan)
         return adopted
+
+    
+    def _announce_block(self, block: Block) -> None:
+        """Broadcast the block to all known peers"""
+        payload = AnnounceBlock(block.height, block.block_hash)
+        for peer in self.get_peers():
+            self.ez_send(peer, payload)
                 
             
+    # --------------------------------------
+    # Mining
+    # --------------------------------------
+    def _on_block_mined_thread_safe(self, block: Block) -> None:
+        """Called from the mining thread, when a block is mined. schedule the result in the event loop to make it thread safe."""
+        loop = asyncio.get_event_loop()
+        loop.call_soon_threadsafe(self._on_block_mined, block)
+    
+    def _on_block_mined(self, block: Block) -> None:
+        """Callback method that handles the actual logic of a mined block"""
+        if not self._chain.add_block(block):
+            self.logger.warning(f"Mined block was rejected form the chain. block: {block}")  # could be that during mining, we got a new tip
+            self._miner.mine(self._chain.tip)                                                # start mining a new block, from the new tip
+            return
+        
+        # The block was successfully added to the chain. 
+        # - remove the transactions included from the mempool
+        # - announce the block to all peers
+        # - start mining form the new block
+        logger.info(f"Block added to chain: {block}")
+        self._mempool.remove_included(block.tx_hashes)
+        self._announce_block(block)
+        self._miner.mine(self._chain.tip)

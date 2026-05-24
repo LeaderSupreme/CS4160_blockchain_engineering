@@ -93,14 +93,13 @@ def satisfies_pow(block_hash: bytes, difficulty: int) -> bool:
     """Check if block_hash has at least `difficulty` leading zero bits, returns true if this is the case"""
     return count_leading_zero_bits(block_hash) >= difficulty
 
-def mine_block(prev_hash: bytes, txs_hash: bytes, timestamp: int, difficulty: int, start_nonce: int = 0) -> tuple[int, bytes]:
-    """Search for a nonce that satisfies the PoW requirement, returns (nonce, block_hash)"""
-    nonce = start_nonce
-    while True:
+def mine_block(prev_hash: bytes, txs_hash: bytes, timestamp: int, difficulty: int, start_nonce: int = 0, count: int=int(float("inf"))) -> tuple[int | None, bytes | None]:
+    """Search for a nonce that satisfies the PoW requirement, returns (nonce, block_hash), or (None, None) if not found in range [start_nonce, start_nonce + count)"""
+    for nonce in range(start_nonce, start_nonce + count, 1):
         candidate = serialize_header(prev_hash, txs_hash, timestamp, difficulty, nonce)
         block_hash = sha256(candidate)
 
         if count_leading_zero_bits(block_hash) >= difficulty:
             return nonce, block_hash
 
-        nonce += 1
+    return (None, None)
