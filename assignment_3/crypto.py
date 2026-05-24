@@ -1,8 +1,6 @@
 import hashlib
 import struct
 
-from dataclasses import dataclass
-
 # --------------------------------------
 # Header functions
 # --------------------------------------
@@ -59,7 +57,6 @@ def compute_txs_hash(tx_hashes: list[bytes]) -> bytes:
     Note that an empty block uses SHA256(b""), and is not just 32 0 bytes.
     """
     return sha256(b"".join(tx_hashes))
-
 
 
 # --------------------------------------
