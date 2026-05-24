@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from ipv8.messaging.payload_dataclass import DataClassPayload
 
 from config import (
-    MSG_REGISTER_BLOCKCHAIN, MSG_REGISTER_RESPONSE, 
+    MSG_BLOCK_RESPONSE_INNER, MSG_REGISTER_BLOCKCHAIN, MSG_REGISTER_RESPONSE, MSG_REQUEST_BLOCK, 
     MSG_SUBMIT_TX, MSG_SUBMIT_TX_RESPONSE, MSG_GET_CHAIN_HEIGHT,
     MSG_CHAIN_HEIGHT_RESPONSE, MSG_GET_BLOCK, MSG_BLOCK_RESPONSE, MSG_ANNOUNCE_BLOCK
 )
@@ -81,3 +81,20 @@ class AnnounceBlock(DataClassPayload[MSG_ANNOUNCE_BLOCK]):
     """Announce you just mined or received a block at this height, include the block hash"""
     height: int
     block_hash: bytes
+
+@dataclass
+class RequestBlock(DataClassPayload[MSG_REQUEST_BLOCK]):
+    """Request a block on a specific height from peers"""
+    height: int
+
+@dataclass
+class BlockResponseInner(DataClassPayload[MSG_BLOCK_RESPONSE_INNER]):
+    """Repondss with requested block"""
+    height: int
+    prev_hash: bytes
+    txs_hash: bytes
+    timestamp: int
+    difficulty: int
+    nonce: int
+    block_hash: bytes
+    tx_hashes: bytes    # flat concatenated 32 byte hashes

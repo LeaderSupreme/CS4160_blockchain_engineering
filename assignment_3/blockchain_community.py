@@ -3,11 +3,11 @@ import logging
 from socket import TCP_TX_DELAY
 import crypto
 
-from assignment_3.chain import Blockchain, Transaction
+from assignment_3.chain import Block, Blockchain, Transaction
 from assignment_3.difficulty import DifficultyPolicy
 from assignment_3.mempool import Mempool
 from assignment_3.miner import Miner
-from assignment_3.payloads import BlockResponse, ChainHeightResponse, GetBlock, GetChainHeight, SubmitTransaction, SubmitTransactionResponse
+from assignment_3.payloads import AnnounceBlock, BlockResponse, BlockResponseInner, ChainHeightResponse, GetBlock, GetChainHeight, RequestBlock, SubmitTransaction, SubmitTransactionResponse
 from assignment_3.peers import TrustedPeers
 
 from .config import BLOCKCHAIN_COMMUNITY_ID
@@ -41,6 +41,17 @@ class BlockchainCommunity(Community):
         self.add_message_handler(SubmitTransaction, self.on_submit_transaction)
         self.add_message_handler(GetChainHeight, self.on_get_chain_height)
         self.add_message_handler(GetBlock, self.on_get_block)
+
+        self.add_message_handler(AnnounceBlock, self.on_announce_block)
+        self.add_message_handler(RequestBlock, self.on_request_block)
+
+        # Orphans
+        # TODO Refactor, this logic belongs in chain.py under Blockhain
+        # These are blocks that are correct, but unconnected for now.
+        # for example, a peer is ahead 2 blocks, and announes a new block.
+        # this block is correct, but we cant connect it to the chain yet.
+        self._orphans: dict[int, Block] = {}  # dict [height -> block]
+
     
     def started(self) -> None:
         # TODO start miner
@@ -66,6 +77,9 @@ class BlockchainCommunity(Community):
             logger.debug(f"Peer left the community. Was neither server nor teammate. mid: {peer.mid}")
 
 
+    # --------------------------------------
+    # Server communication
+    # --------------------------------------
     @lazy_wrapper(SubmitTransaction)
     def on_submit_transaction(self, peer: Peer, payload: SubmitTransaction) -> None:
         """A peer submits a transaction to the mempool
@@ -166,3 +180,105 @@ class BlockchainCommunity(Community):
 
         
     
+    # --------------------------------------
+    # Internal communication
+    # --------------------------------------
+    @lazy_wrapper(AnnounceBlock)
+    def on_announce_block(self, peer: Peer, payload: AnnounceBlock) -> None:
+        """Handle a block announcement. If we dont have this block yet, we will request more info for it"""
+        if payload.height > self._chain.height:
+            logger.info(f"Received block announcement from peer: {peer}, with height: {payload.height}, this is bigger then our own height: {self._chain.height}")
+            self.ez_send(peer, RequestBlock(payload.height))
+            return
+
+        elif payload.height == self._chain.height and not self._chain.contains(payload.block_hash):
+            logger.info(f"Received block announcement from peer: {peer}, at same height: {payload.height}, but unkown hash. Possible fork.") 
+            self.ez_send(peer, RequestBlock(payload.height))
+            return
+        
+        else:
+            logger.debug(f"Received block announcement from peer {peer}, with height {payload.height}, our height is: {self._chain.height}, ignoring announcmeent.")
+
+    @lazy_wrapper(RequestBlock)
+    def on_request_block(self, peer: Peer, payload: RequestBlock) -> None:
+        """Handle request block request, SAME LOGIC AS ON_GET_BLOCK"""
+        block = self._chain.get_block(payload.height)
+        if not block:
+            self.logger.warning(f"Couldnt find a block a requested height: {payload.height}")
+            return  # TODO no way to send failure right? mb other peers will have this height already
+        
+        tx_hashes = b"".join([transaction.tx_hash for transaction in block.transactions])
+        self.ez_send(
+            peer,
+            BlockResponse(
+                height=block.height,
+                prev_hash=block.prev_hash,
+                txs_hash=block.txs_hash,
+                timestamp=block.timestamp,
+                difficulty=block.difficulty,
+                nonce=block.nonce,
+                block_hash=block.block_hash,
+                tx_hashes=tx_hashes
+            )
+        )
+        self.logger.debug(f"Successfully returned requested block at height: {payload.height} to peer: {peer}")
+
+    @lazy_wrapper(BlockResponseInner)
+    def on_block_response_internal(self, peer: Peer, payload: BlockResponseInner) -> None:
+        """Handle Block reponse inner. We verify the block, and possible add it to our chain."""
+
+        # Deserialze the tx hashes
+        if len(payload.tx_hashes) % 32 != 0:
+            logger.warning(f"Inernal Block response: Can't decode tx hashes. Nr bytes not divisible by 32, len: {len(payload.tx_hashes)}")
+            return
+        tx_hashes = [payload.tx_hashes[i:i+32] for i in range(0, len(payload.tx_hashes), 32)]
+
+        txs_hash_check = crypto.compute_txs_hash(tx_hashes)
+        if txs_hash_check != payload.txs_hash:
+            logger.warning("Internal Block Response: txs_hash mismatch, rejecting block")
+            return
+
+        header_hash_check = crypto.hash_header(payload.prev_hash, payload.txs_hash, payload.timestamp, payload.difficulty, payload.nonce)
+        if header_hash_check != payload.block_hash:
+            logger.warning("Internal Block Response: blockhash didnt match header hash, rejecting block")
+            return
+        
+        #TODO is it a problem we don't have the transactions?
+        block = Block(
+            block_hash=payload.block_hash,
+            prev_hash=payload.prev_hash,
+            txs_hash=payload.txs_hash,
+            timestamp=payload.timestamp,
+            difficulty=payload.difficulty,
+            nonce=payload.nonce,
+            height=payload.height,transactions=()  # We dont have the transactions 
+        )
+
+        if self._chain.add_block(block):
+            self.logger.debug(f"Internal block response. Added block from peer {peer} to chain")
+            adtopted = self.adopt_orphans()
+            logger.info(f"Interal block resopnse: was able to adopt {len(adtopted)} orphans after this addition")
+            return
+        
+        #TODO probably should not be here
+        if block.height > self._chain.height + 1:
+            self._orphans[block.height] = block
+            logger.info(f"Internal block response: from peer: {peer} was valid, but were unable to add to chain. incorrect height. "
+                        f"our height: {self._chain.height}, block height: {block.height}. requesting previous block and added to orphans")
+            self.ez_send(peer, RequestBlock(block.height-1))
+
+    def adopt_orphans(self) -> list[Block]:
+        """Try to adopt orphans from the current pool"""
+        adopted = []
+        while True:
+            orphan = self._orphans.pop(self._chain.height + 1, None)
+            if not orphan:
+                break
+
+            if not self._chain.add_block(orphan):
+                break
+
+            adopted.append(orphan)
+        return adopted
+                
+            
