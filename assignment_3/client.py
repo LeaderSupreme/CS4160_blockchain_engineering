@@ -1,15 +1,22 @@
-from ipv8.keyvault.crypto import ECCrypto
-from typing import List
+import logging
 import asyncio
 from pathlib import Path
 
+from .config import PERSONAL_KEY_FILE
 from assignment_3.blockchain_community import BlockchainCommunity
 from assignment_3.registering_community import RegisteringCommunity
-from .config import PERSONAL_KEY_FILE
  
 from ipv8.configuration import ConfigBuilder, Strategy, WalkerDefinition, default_bootstrap_defs
-from ipv8.lazy_community import lazy_wrapper
 from ipv8_service import IPv8
+
+class _UnsupportedCurveFilter(logging.Filter):
+    """Suppress the stream of 'Curve X is not supported' errors from old peers."""
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return "Curve" not in msg and "is not supported" not in msg
+ 
+logging.getLogger(__name__).addFilter(_UnsupportedCurveFilter())
+logging.basicConfig(level=logging.DEBUG)
 
 async def main():
     key_path = Path(PERSONAL_KEY_FILE)
@@ -17,9 +24,7 @@ async def main():
     builder = ConfigBuilder()
     builder.clear_keys()
     builder.clear_overlays()
- 
     builder.add_key("my peer", "curve25519", str(key_path))
- 
     builder.add_overlay(
         "Lab2Community",
         "my peer",
@@ -27,13 +32,15 @@ async def main():
         default_bootstrap_defs,
         {},
         [],
-        -1,
+        False,
     )
  
     ipv8 = IPv8(
         builder.finalize(),
-        extra_communities={"BlockchainCommunity": BlockchainCommunity,
-                           "RegisteringCommunity": RegisteringCommunity},
+        extra_communities={
+            "BlockchainCommunity": BlockchainCommunity,
+            "RegisteringCommunity": RegisteringCommunity
+        },
     )
  
     await ipv8.start()
