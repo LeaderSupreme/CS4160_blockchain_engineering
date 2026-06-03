@@ -20,7 +20,7 @@ class _UnsupportedCurveFilter(logging.Filter):
         msg = record.getMessage()
         return "Curve" not in msg and "is not supported" not in msg
  
-logging.getLogger(__name__).addFilter(_UnsupportedCurveFilter())
+logging.getLogger("RegisteringCommunity").addFilter(_UnsupportedCurveFilter())
 logging.basicConfig(level=logging.DEBUG)
 
 async def main():
@@ -37,7 +37,7 @@ async def main():
     builder.clear_overlays()
     builder.add_key("my peer", "curve25519", str(key_path))
     builder.add_overlay(
-        "Lab2Community",
+        "RegisteringCommunity",
         "my peer",
         [WalkerDefinition(Strategy.RandomWalk, 20, {"timeout": 5.0})],
         default_bootstrap_defs,

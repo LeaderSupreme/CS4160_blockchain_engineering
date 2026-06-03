@@ -3,11 +3,18 @@ import logging
 
 from payloads import RegisterBlockchain, RegisterResponse
 
-from config import BLOCKCHAIN_COMMUNITY_ID, GROUP_ID, REGISTRATION_COMMUNITY_ID_B, SERVER_PUBLIC_KEY_B
+from config import BLOCKCHAIN_COMMUNITY_ID, GROUP_ID, REGISTRATION_COMMUNITY_ID_B
 from ipv8.community import Community
 from ipv8.lazy_community import lazy_wrapper
 from ipv8.peer import Peer
 
+class _UnsupportedCurveFilter(logging.Filter):
+    """Suppress the stream of 'Curve X is not supported' errors from old peers."""
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return "Curve" not in msg and "is not supported" not in msg
+ 
+logging.getLogger("RegisteringCommunity").addFilter(_UnsupportedCurveFilter())
 logger = logging.getLogger(__name__)
 
 class RegisteringCommunity(Community):
