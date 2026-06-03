@@ -2,7 +2,7 @@ import logging
 
 from ipv8.peer import Peer
 
-from .config import SERVER_PUBLIC_KEY_B, TEAMMATE_PUBLIC_KEYS_HEX
+from config import SERVER_PUBLIC_KEY_B, TEAMMATE_PUBLIC_KEYS_HEX
 
 logger = logging.getLogger(__name__)
 

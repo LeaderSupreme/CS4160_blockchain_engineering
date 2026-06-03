@@ -1,11 +1,9 @@
 import asyncio
 import logging
 
-from assignment_2.temp import is_server
-from assignment_3.payloads import RegisterBlockchain, RegisterResponse
-from assignment_3.peers import TrustedPeers
+from payloads import RegisterBlockchain, RegisterResponse
 
-from .config import BLOCKCHAIN_COMMUNITY_ID, GROUP_ID, REGISTRATION_COMMUNITY_ID_B, SERVER_PUBLIC_KEY_B
+from config import BLOCKCHAIN_COMMUNITY_ID, GROUP_ID, REGISTRATION_COMMUNITY_ID_B, SERVER_PUBLIC_KEY_B
 from ipv8.community import Community
 from ipv8.lazy_community import lazy_wrapper
 from ipv8.peer import Peer

@@ -2,14 +2,16 @@
 
 ## Possible upgrades
 
-- Dynamic difficulty
-- Merkle tree for `txs_hash`
+- Dynamic difficulty - Ruben
+- Merkle tree for `txs_hash` - Ruben
 - Transaction fees / Coinbase
 - Persistent chain?
-- More intelligent way to keep track of forks (tree?)
-- Dependency tracking in Mempool for order of mining
-- Multi threaded mining, each thread can get his own nonce range
-- enable sharing the mempool, so if you submit one transaction to a node, all others also get it
+- Dependency tracking in mempool for order of mining - Ruben
+- Multi threaded mining, each thread can get his own nonce range - Ruben
+- More intelligent way to keep track of forks (tree?) - Daniel
+- Handle orphan nodes better - Daniel
+- Enable sharing the mempool, so if you submit one transaction to a node, all others also get it - Faizel
+- Periodically syncing chains between nodes - Faizel
 
 ## Run tests
 

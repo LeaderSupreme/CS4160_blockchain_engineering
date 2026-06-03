@@ -2,14 +2,14 @@ import asyncio
 import logging
 import crypto
 
-from assignment_3.chain import Block, Blockchain, Transaction
-from assignment_3.difficulty import DifficultyPolicy
-from assignment_3.mempool import Mempool
-from assignment_3.miner import Miner
-from assignment_3.payloads import AnnounceBlock, BlockResponse, BlockResponseInner, ChainHeightResponse, GetBlock, GetChainHeight, RequestBlock, SubmitTransaction, SubmitTransactionResponse
-from assignment_3.peers import TrustedPeers
+from chain import Block, Blockchain, Transaction
+from difficulty import DifficultyPolicy
+from mempool import Mempool
+from miner import Miner
+from payloads import AnnounceBlock, BlockResponse, BlockResponseInner, ChainHeightResponse, GetBlock, GetChainHeight, RequestBlock, SubmitTransaction, SubmitTransactionResponse
+from peers import TrustedPeers
 
-from .config import BLOCKCHAIN_COMMUNITY_ID
+from config import BLOCKCHAIN_COMMUNITY_ID
 
 from ipv8.community import Community, lazy_wrapper
 from ipv8.peer import Peer

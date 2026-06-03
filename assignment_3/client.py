@@ -2,14 +2,14 @@ import logging
 import asyncio
 from pathlib import Path
 
-from assignment_3.chain import Blockchain, make_genesis_block
-from assignment_3.difficulty import FixedDifficultyPolicy
-from assignment_3.mempool import Mempool
-from assignment_3.peers import TrustedPeers
+from chain import Blockchain, make_genesis_block
+from difficulty import FixedDifficultyPolicy
+from mempool import Mempool
+from peers import TrustedPeers
 
-from .config import PERSONAL_KEY_FILE, DIFFICULTY
-from assignment_3.blockchain_community import BlockchainCommunity
-from assignment_3.registering_community import RegisteringCommunity
+from config import PERSONAL_KEY_FILE, DIFFICULTY
+from blockchain_community import BlockchainCommunity
+from registering_community import RegisteringCommunity
  
 from ipv8.configuration import ConfigBuilder, Strategy, WalkerDefinition, default_bootstrap_defs
 from ipv8_service import IPv8
@@ -30,7 +30,7 @@ async def main():
     mempool = Mempool(max_size=1000)
     trusted_peers = TrustedPeers()
     difficulty_policy = FixedDifficultyPolicy()
-    
+     
  
     builder = ConfigBuilder()
     builder.clear_keys()

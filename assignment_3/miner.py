@@ -5,10 +5,9 @@ import crypto
 
 from typing import Callable
 
-from .chain import Blockchain, Block, Transaction
-from .difficulty import DifficultyPolicy
-from .mempool import Mempool
-from assignment_3 import difficulty
+from chain import Blockchain, Block, Transaction
+from difficulty import DifficultyPolicy
+from mempool import Mempool
 
 logger = logging.getLogger(__name__)
 
