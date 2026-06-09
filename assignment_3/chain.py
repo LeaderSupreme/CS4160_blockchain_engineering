@@ -1,8 +1,8 @@
 import logging
 from dataclasses import dataclass
 
-from config import DIFFICULTY
-from crypto import compute_txs_hash, hash_header, satisfies_pow, sha256, serialize_header
+from config import DEFAULT_DIFFICULTY
+from crypto import compute_txs_hash, hash_header, satisfies_pow, sha256
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ class Block:
         )
 
 
-def make_genesis_block(difficulty: int = DIFFICULTY) -> Block:
+def make_genesis_block(difficulty: int = DEFAULT_DIFFICULTY) -> Block:
     """The chain needs a genesis block. It needs to be identical on all nodes, so we hardcode it to make it easy.
 
     genesis block:
@@ -86,7 +86,7 @@ def make_genesis_block(difficulty: int = DIFFICULTY) -> Block:
         timestamp=0,
         difficulty=difficulty,
         nonce=0,
-        block_hash=hash_header(prev_hash, txs_hash, timestamp, difficulty, nonce),
+        block_hash=hash_header(b"\x00" * 32, sha256(b""), 0, difficulty, 0),
         transactions=(),
     )
 

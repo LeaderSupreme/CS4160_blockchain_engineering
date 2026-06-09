@@ -8,10 +8,8 @@ TEAMMATE_PUBLIC_KEYS_HEX: list[str] = [ # Faizel, Daniel, Ruben
     "4c69624e61434c504b3aeee1ef4ef0b026f4b75d23109e1687bb862525de4722d286b2b5f73a04ee07386ed8f829bdbb38133bb5d044a09594b937dd3e268a0d668f203edfd42e630ca6",
     "4c69624e61434c504b3a083cce420655430799b74fb41c1ca5a224e62c545bd01c399375fa30fb2fad7703f907989c049b65042ca5d1b54471691161b629cb7972aecd2cc83fe04a34bd",
 ]
-
 PERSONAL_KEY_FILE = "assignment_3/key.pem"
 
-DIFFICULTY: int = 16
 REQUIRED_CONFIRMATIONS: int = 3
 ATTEMPT_TIMEOUT_S: int = 300  # Grading server times out in 5 minutes
 
@@ -26,8 +24,20 @@ MSG_GET_CHAIN_HEIGHT = 3
 MSG_CHAIN_HEIGHT_RESPONSE = 4
 MSG_GET_BLOCK = 5
 MSG_BLOCK_RESPONSE = 6
+MSG_ANNOUNCE_BLOCK = 7  
 
 # MSG ids inner communication
 MSG_ANNOUNCE_BLOCK = 90 
 MSG_REQUEST_BLOCK = 91
 MSG_BLOCK_RESPONSE_INNER = 92
+
+# Dynamic difficulty params
+DEFAULT_DIFFICULTY: int = 16
+MAX_DIFFICULTY: int = 100
+MIN_DIFFICULTY: int = 10
+TARGET_BLOCK_TIME_S: int = 60
+
+FUTURE_DRIFT_S: int = 60 # Seconds in the future we tolerate from a peer's timestamp.
+EMA_WINDOW: int = 10 # EMA window in blocks. Smaller reacts faster but is noisier.
+_ALPHA: float = 2.0 / (EMA_WINDOW + 1)
+MAX_ADJUSTMENT: float = 2.0 # Maximum ratio change per block (caps at 2x up or 0.5x down per step).
