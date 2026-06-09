@@ -79,7 +79,7 @@ class Miner:
         while not self._stop_event.is_set():
             found_nonce, block_hash = crypto.mine_block(prev_hash, txs_hash, timestamp, difficulty, nonce, check_interval)
 
-            if found_nonce and block_hash:
+            if found_nonce is not None and block_hash:
                 block = Block(
                     height=tip.height + 1,
                     prev_hash=prev_hash,
