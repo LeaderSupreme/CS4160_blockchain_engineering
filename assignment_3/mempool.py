@@ -2,7 +2,7 @@ import logging
 
 from typing import Callable
 
-from .chain import Transaction
+from chain import Transaction
 
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,10 @@ class Mempool:
         self.max_size = max_size
 
     def add(self, tx: Transaction) -> bool:
-        """Add a transaction to the pool, if needed evict lowest priority transaction. Returns false if transaction already in pool, true otherwise"""
+        """Add a transaction to the pool, if needed evict lowest priority transaction. 
+        Returns false if transaction already in pool or if the pool is full and the transaction 
+        does not have a high enough priority, true otherwise
+        """
         if tx.tx_hash in self._pool:
             logger.debug(f"Mempool: transaction already in pool tx {tx}, ignoring.")
             return False

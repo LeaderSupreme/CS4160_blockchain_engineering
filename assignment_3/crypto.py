@@ -1,8 +1,6 @@
 import hashlib
 import struct
 
-from dataclasses import dataclass
-
 # --------------------------------------
 # Header functions
 # --------------------------------------
@@ -40,14 +38,28 @@ def sha256(data: bytes) -> bytes:
 # Transaction functions
 # --------------------------------------
 # --------------------------------------
-# Transaction layout (84 bytes total)
+# Transaction layout (134+ bytes total)
 # --------------------------------------
-# Field
-# - sender_key (32 bytes)
-# - data       (arbitrary data)
-# - timestamp  (unix seconds, 8 bytes)
-# - signature  (sign combination of all 3 fields above)
+# Offset  Size   Field
+#   0      32    sender_key
+#  32       8    timestamp   (unix seconds)
+#  40      64    signature
+# 104      32    tx_hash
+# 134      ...   data        (arbitrary payload, is just the rest of the bytes)
 # --------------------------------------
+TX_STRUCT = struct.Struct(">32sQ64s32s")
+assert TX_STRUCT.size == 136
+
+def serialize_transaction(sender_key: bytes, timestamp: int, signature: bytes, tx_hash: bytes, data: bytes) -> bytes:
+    """Serialize an entire transaction, we add the unbounded data bytes at the end"""
+    return TX_STRUCT.pack(sender_key, timestamp, signature, tx_hash) + data
+
+def deserialize_transaction(raw: bytes) -> tuple[bytes, int, bytes, bytes, bytes]:
+    """Deserialize a transaction"""
+    sender_key, timestamp, signature, tx_hash = TX_STRUCT.unpack(raw[:TX_STRUCT.size])
+    data = raw[TX_STRUCT.size:]
+    return sender_key, timestamp, signature, tx_hash, data
+
 def hash_transaction(sender_key: bytes, data: bytes, timestamp: int, signature: bytes) -> bytes:
     """Hash a transaction, converts int timestamp to 8 byte binary representation"""
     timestamp_bytes = timestamp.to_bytes(8, "big")
@@ -59,7 +71,6 @@ def compute_txs_hash(tx_hashes: list[bytes]) -> bytes:
     Note that an empty block uses SHA256(b""), and is not just 32 0 bytes.
     """
     return sha256(b"".join(tx_hashes))
-
 
 
 # --------------------------------------
@@ -82,14 +93,13 @@ def satisfies_pow(block_hash: bytes, difficulty: int) -> bool:
     """Check if block_hash has at least `difficulty` leading zero bits, returns true if this is the case"""
     return count_leading_zero_bits(block_hash) >= difficulty
 
-def mine_block(prev_hash: bytes, txs_hash: bytes, timestamp: int, difficulty: int, start_nonce: int = 0) -> tuple[int, bytes]:
-    """Search for a nonce that satisfies the PoW requirement, returns (nonce, block_hash)"""
-    nonce = start_nonce
-    while True:
+def mine_block(prev_hash: bytes, txs_hash: bytes, timestamp: int, difficulty: int, start_nonce: int = 0, count = 2**64) -> tuple[int | None, bytes | None]:
+    """Search for a nonce that satisfies the PoW requirement, returns (nonce, block_hash), or (None, None) if not found in range [start_nonce, start_nonce + count)"""
+    for nonce in range(start_nonce, start_nonce + count, 1):
         candidate = serialize_header(prev_hash, txs_hash, timestamp, difficulty, nonce)
         block_hash = sha256(candidate)
 
         if self.satisfies_pow(block_hash, difficulty):
             return nonce, block_hash
 
-        nonce += 1
+    return (None, None)

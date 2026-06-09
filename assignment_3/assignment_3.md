@@ -81,7 +81,7 @@ Verify the signature, add the transaction to your mempool, and respond.
 | Field | Type | Wire | Description |
 |---|---|---|---|
 | `request_id` | int | `q` | Identifier for matching the response |
-
+s
 ### Chain Height Response (message_id = 4)
 
 | Field | Type | Wire | Description |
@@ -98,7 +98,7 @@ Verify the signature, add the transaction to your mempool, and respond.
 
 ### Block Response (message_id = 6)
 
-| Field | Type | Wire | Description |
+| Field | Type | Wire | Description s|
 |---|---|---|---|
 | `height` | int | `q` | Block height |
 | `prev_hash` | bytes | `varlenH` | Previous block hash (32 bytes) |
