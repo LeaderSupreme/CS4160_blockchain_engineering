@@ -95,11 +95,14 @@ def satisfies_pow(block_hash: bytes, difficulty: int) -> bool:
 
 def mine_block(prev_hash: bytes, txs_hash: bytes, timestamp: int, difficulty: int, start_nonce: int = 0, count = float("inf")) -> tuple[int | None, bytes | None]:
     """Search for a nonce that satisfies the PoW requirement, returns (nonce, block_hash), or (None, None) if not found in range [start_nonce, start_nonce + count)"""
-    for nonce in range(start_nonce, start_nonce + count, 1):
+    nonce = start_nonce
+    end = start_nonce + count  # may be float("inf")
+    while nonce < end:
         candidate = serialize_header(prev_hash, txs_hash, timestamp, difficulty, nonce)
         block_hash = sha256(candidate)
 
         if count_leading_zero_bits(block_hash) >= difficulty:
             return nonce, block_hash
+        nonce += 1
 
     return (None, None)
