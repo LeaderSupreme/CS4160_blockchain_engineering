@@ -1,7 +1,5 @@
-import pytest
-
-from ..mempool import Mempool
-from ..chain import Transaction
+from mempool import Mempool
+from chain import Transaction
 
 def make_tx(timestamp: int) -> Transaction:
     """Make a Transaction with a unique tx_hash derived from timestamp."""
