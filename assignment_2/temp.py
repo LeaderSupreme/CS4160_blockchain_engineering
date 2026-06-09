@@ -145,7 +145,15 @@ class Lab2Community(Community, PeerObserver):
     def started(self):
         print("-- STARTED COMMUNITY --")
         print(f"Own mid: {self.my_peer.mid.hex()}")
-        print(f"My key end: {self.my_peer.public_key.key_to_bin().hex()[-20:]}")
+        print(f"My key end: {self.my_peer.public_key.key_to_bin().hex()[-20:]}"
+        if peer in self.teammates_ready.keys():
+            return
+
+        self.teammates_ready[peer] = self._member_to_nr[sender_key]
+        print(f"Teammate {self.teammates_ready[peer]} ready ({len(self.teammates_ready)}/3)")
+
+        if len(self.teammates_ready.keys()) == 3:
+            print("EVERYONE READY, nr 1 will start challenge"))
         print(f"my idx: {self._my_index}")
         self.network.add_peer_observer(self)
         self._nr_to_peer[self._my_index] = self.my_peer

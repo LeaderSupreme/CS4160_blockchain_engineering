@@ -1,41 +1,65 @@
-from ipv8.keyvault.crypto import ECCrypto
-from typing import List
+import logging
 import asyncio
 from pathlib import Path
 
-from assignment_3.blockchain_community import BlockchainCommunity
-from assignment_3.registering_community import RegisteringCommunity
-from .config import PERSONAL_KEY_FILE
+from chain import Blockchain, make_genesis_block
+from difficulty import FixedDifficultyPolicy
+from mempool import Mempool
+from peers import TrustedPeers
+
+from config import PERSONAL_KEY_FILE, DIFFICULTY
+from blockchain_community import BlockchainCommunity
+from registering_community import RegisteringCommunity
  
 from ipv8.configuration import ConfigBuilder, Strategy, WalkerDefinition, default_bootstrap_defs
-from ipv8.lazy_community import lazy_wrapper
 from ipv8_service import IPv8
+
+class _UnsupportedCurveFilter(logging.Filter):
+    """Suppress the stream of 'Curve X is not supported' errors from old peers."""
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return "Curve" not in msg and "is not supported" not in msg
+ 
+logging.getLogger("RegisteringCommunity").addFilter(_UnsupportedCurveFilter())
+logging.basicConfig(level=logging.DEBUG)
 
 async def main():
     key_path = Path(PERSONAL_KEY_FILE)
+
+    blockchain = Blockchain(make_genesis_block(DIFFICULTY))
+    mempool = Mempool(max_size=1000)
+    trusted_peers = TrustedPeers()
+    difficulty_policy = FixedDifficultyPolicy()
+     
  
     builder = ConfigBuilder()
     builder.clear_keys()
     builder.clear_overlays()
- 
     builder.add_key("my peer", "curve25519", str(key_path))
- 
     builder.add_overlay(
-        "Lab2Community",
+        "RegisteringCommunity",
         "my peer",
         [WalkerDefinition(Strategy.RandomWalk, 20, {"timeout": 5.0})],
         default_bootstrap_defs,
-        {},
+        {
+            "chain": blockchain,
+            "mempool": mempool,
+            "trusted_peers": trusted_peers,
+            "difficulty_policy": difficulty_policy
+        },
         [],
-        -1,
+        False,
     )
  
     ipv8 = IPv8(
         builder.finalize(),
-        extra_communities={"BlockchainCommunity": BlockchainCommunity,
-                           "RegisteringCommunity": RegisteringCommunity},
+        extra_communities={
+            "BlockchainCommunity": BlockchainCommunity,
+            "RegisteringCommunity": RegisteringCommunity
+        },
     )
  
+    # TODO mb choose 1 teammate to register, and the rest can just start blockchain community
     await ipv8.start()
     print("IPv8 started, waiting for server peer...\n")
  
