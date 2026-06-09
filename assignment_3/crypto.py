@@ -89,7 +89,7 @@ def mine_block(prev_hash: bytes, txs_hash: bytes, timestamp: int, difficulty: in
         candidate = serialize_header(prev_hash, txs_hash, timestamp, difficulty, nonce)
         block_hash = sha256(candidate)
 
-        if count_leading_zero_bits(block_hash) >= difficulty:
+        if self.satisfies_pow(block_hash, difficulty):
             return nonce, block_hash
 
         nonce += 1

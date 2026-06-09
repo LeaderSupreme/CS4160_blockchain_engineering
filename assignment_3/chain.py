@@ -79,21 +79,14 @@ def make_genesis_block(difficulty: int = DIFFICULTY) -> Block:
       nonce      = 0              (doesnt have a nonce, it doesnt need pow, as it won't be need to be mined)
       height     = 0              (it is the first block of the chain)
     """
-    prev_hash = b"\x00" * 32
-    txs_hash = sha256(b"")
-    timestamp = 0
-    nonce = 0
-
-    block_hash = hash_header(prev_hash, txs_hash, timestamp, difficulty, nonce)
-
     return Block(
         height=0,
-        prev_hash=prev_hash,
-        txs_hash=txs_hash,
-        timestamp=timestamp,
+        prev_hash=b"\x00" * 32,
+        txs_hash=sha256(b""),
+        timestamp=0,
         difficulty=difficulty,
-        nonce=nonce,
-        block_hash=block_hash,
+        nonce=0,
+        block_hash=hash_header(prev_hash, txs_hash, timestamp, difficulty, nonce),
         transactions=(),
     )
 
