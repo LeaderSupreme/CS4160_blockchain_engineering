@@ -1,67 +1,36 @@
+from __future__ import annotations
+
 import os
 import struct
-import msgpack
+import logging
 from pathlib import Path
 from typing import Iterator, Protocol
-from .chain import Block, Transaction
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .chain import Block
 
 # 4-byte big-endian length prefix on every WAL record.
 _LEN_STRUCT = struct.Struct(">I")
 _WAL_FILENAME = "chain.wal"
 _WAL_TMP = "chain.wal.tmp"
 
-
-def _dict_to_block(d: dict) -> Block:
-    """Deserialise a plain dict back to a Block."""
-    # msgpack returns bytes for bytes fields.
-    def _b(v) -> bytes:
-        return v if isinstance(v, (bytes, bytearray)) else bytes.fromhex(v)
-
-    txs = tuple(
-        Transaction(
-            sender_key=_b(t["sender_key"]),
-            data=_b(t["data"]),
-            timestamp=t["timestamp"],
-            signature=_b(t["signature"]),
-            tx_hash=_b(t["tx_hash"]),
-        )
-        for t in d.get("transactions", [])
-    )
-    return Block(
-        height=d["height"],
-        prev_hash=_b(d["prev_hash"]),
-        txs_hash=_b(d["txs_hash"]),
-        timestamp=d["timestamp"],
-        difficulty=d["difficulty"],
-        nonce=d["nonce"],
-        block_hash=_b(d["block_hash"]),
-        transactions=txs,
-    )
-
-
-def _encode(block: Block) -> bytes:
-    d = block.to_dict()
-    return msgpack.packb(d, use_bin_type=True) # type: ignore
-
-def _decode(data: bytes) -> Block:
-    d =  msgpack.unpackb(data, raw=False)
-    return _dict_to_block(d)
-
+logger = logging.getLogger(__name__)
 
 class BlockStorage(Protocol):
     """
     Minimal storage interface that Blockchain depends on.
     """
 
-    def load(self) -> list[Block]:
+    def load(self) -> list[bytes]:
         """Return all stored blocks in ascending height order."""
         ...
 
-    def append(self, block: Block) -> None:
+    def append(self, block: bytes) -> None:
         """Durably store a newly confirmed block."""
         ...
 
-    def replace_all(self, blocks: list[Block]) -> None:
+    def replace_all(self, blocks: list[bytes]) -> None:
         """
         Replace the entire stored chain with `blocks` (for fork switches).
 
@@ -76,15 +45,15 @@ class InMemoryStorage(BlockStorage):
     """
 
     def __init__(self) -> None:
-        self._blocks: list[Block] = []
+        self._blocks: list[bytes] = []
 
-    def load(self) -> list[Block]:
+    def load(self) -> list[bytes]:
         return list(self._blocks)
 
-    def append(self, block: Block) -> None:
+    def append(self, block: bytes) -> None:
         self._blocks.append(block)
 
-    def replace_all(self, blocks: list[Block]) -> None:
+    def replace_all(self, blocks: list[bytes]) -> None:
         self._blocks = list(blocks)
 
 
@@ -110,24 +79,23 @@ class WALStorage(BlockStorage):
         self._compact_every = compact_every
         self._appends_since_compact = 0
 
-    def load(self) -> list[Block]:
+    def load(self) -> list[bytes]:
         """
         Replay the WAL and return all blocks in height order.
         Stops at the first truncated record (partial writes at the tail are silently discarded).
         There could be blocks with duplicate heights, this should be handled by the consumer.
         """
         if not self._wal_path.exists():
+            logger.info("Loading WAL storage, but path did not exist. Returning empty list.")
             return []
 
-        blocks = list(self._replay(self._wal_path))
-        return sorted(blocks, key=lambda b: b.height)
+        return list(self._replay(self._wal_path))
 
-    def append(self, block: Block) -> None:
+    def append(self, block: bytes) -> None:
         """Append a single block record to the WAL."""
-        record = _encode(block)
         with open(self._wal_path, "ab") as fh:
-            fh.write(_LEN_STRUCT.pack(len(record)))
-            fh.write(record)
+            fh.write(_LEN_STRUCT.pack(len(block)))
+            fh.write(block)
             fh.flush()
             os.fsync(fh.fileno())
 
@@ -135,7 +103,7 @@ class WALStorage(BlockStorage):
         if self._appends_since_compact >= self._compact_every:
             self._compact()
 
-    def replace_all(self, blocks: list[Block]) -> None:
+    def replace_all(self, blocks: list[bytes]) -> None:
         """
         Rewrite the WAL with only the given blocks.
 
@@ -146,7 +114,7 @@ class WALStorage(BlockStorage):
         os.replace(self._tmp_path, self._wal_path)
         self._appends_since_compact = 0
 
-    def _replay(self, path: Path) -> Iterator[Block]:
+    def _replay(self, path: Path) -> Iterator[bytes]:
         """
         Yield blocks by reading length-prefixed records from `path`.
 
@@ -156,29 +124,31 @@ class WALStorage(BlockStorage):
             while True:
                 length_bytes = fh.read(_LEN_STRUCT.size)
                 if len(length_bytes) < _LEN_STRUCT.size:
-                    # EOF or truncated length field — stop here.
+                    # EOF or truncated length field - stop here.
+                    logger.debug(f"EOF or truncated length field, for path: {path}")
                     break
 
                 (length,) = _LEN_STRUCT.unpack(length_bytes)
                 data = fh.read(length)
                 if len(data) < length:
-                    # Truncated record body — discard and stop.
+                    # Truncated record body - discard and stop.
+                    logger.debug(f"Truncated record body, for path: {path}")
                     break
 
                 try:
-                    yield _decode(data)
-                except Exception:
-                    # Corrupted record — stop rather than skipping,
+                    yield data
+                except Exception as e:
+                    # Corrupted record - stop rather than skipping,
                     # so we don't silently lose a gap in the chain.
+                    logger.debug(f"Corrupted Record, for path: {path}: {repr(e)}")
                     break
 
-    def _write_wal(self, path: Path, blocks: list[Block]) -> None:
+    def _write_wal(self, path: Path, blocks: list[bytes]) -> None:
         """Write all blocks to `path` as a fresh WAL (no prior content)."""
         with open(path, "wb") as fh:
             for block in blocks:
-                record = _encode(block)
-                fh.write(_LEN_STRUCT.pack(len(record)))
-                fh.write(record)
+                fh.write(_LEN_STRUCT.pack(len(block)))
+                fh.write(block)
             fh.flush()
             os.fsync(fh.fileno())
 
@@ -189,7 +159,7 @@ class WALStorage(BlockStorage):
         Called automatically after `compact_every` appends. Also callable
         manually (e.g. on clean shutdown).
         """
-        blocks = self.load()     # deduplicated and sorted by load()
+        blocks = self.load()
         self._write_wal(self._tmp_path, blocks)
         os.replace(self._tmp_path, self._wal_path)
         self._appends_since_compact = 0

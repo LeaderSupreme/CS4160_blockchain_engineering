@@ -1,3 +1,4 @@
+import msgpack
 import logging
 from dataclasses import dataclass, field
 
@@ -63,6 +64,39 @@ class Block:
             "transactions": [tx.to_dict() for tx in self.transactions],
         }
 
+    
+    @staticmethod
+    def _dict_to_block(d: dict) -> "Block":
+        """Deserialise a plain dict back to a Block."""
+        txs = tuple(
+            Transaction(
+                sender_key=t["sender_key"],
+                data=t["data"],
+                timestamp=t["timestamp"],
+                signature=t["signature"],
+                tx_hash=t["tx_hash"],
+            )
+            for t in d.get("transactions", [])
+        )
+        return Block(
+            height=d["height"],
+            prev_hash=d["prev_hash"],
+            txs_hash=d["txs_hash"],
+            timestamp=d["timestamp"],
+            difficulty=d["difficulty"],
+            nonce=d["nonce"],
+            block_hash=d["block_hash"],
+            transactions=txs,
+        )
+
+    @staticmethod
+    def _decode(data: bytes) -> "Block":
+        d =  msgpack.unpackb(data, raw=False)
+        return Block._dict_to_block(d)
+
+    def _encode(self) -> bytes:
+        d = self.to_dict()
+        return msgpack.packb(d, use_bin_type=True) # type: ignore
 
     def verify_header(self) -> bool:
         """Checks the header is internally consistent: block_hash is the hash of the header,
@@ -183,14 +217,15 @@ class Blockchain:
         self._storage = storage
         loaded_data = self._storage.load()
         if loaded_data and len(loaded_data) > 0:
-            self._chain = {b.height: b for b in loaded_data}
-            self._blocks: dict[bytes, Block] = {b.block_hash: b for b in loaded_data} 
-            self._genesis = loaded_data[0]
+            decoded_loaded_data = [Block._decode(b) for b in loaded_data]
+            self._chain = {b.height: b for b in decoded_loaded_data}
+            self._blocks: dict[bytes, Block] = {b.block_hash: b for b in decoded_loaded_data} 
+            self._genesis = self._chain[0]
         else:
             self._chain = {0: genesis}
-            self._genesis = genesis
             self._blocks: dict[bytes, Block] = {genesis.block_hash: genesis}
-            storage.append(genesis)
+            self._genesis = genesis
+            storage.append(genesis._encode())
 
     @property
     def height(self) -> int:
@@ -256,7 +291,7 @@ class Blockchain:
 
         if block.height == self.height:
             # Persist this block
-            self._storage.append(block)
+            self._storage.append(block._encode())
 
         return result
 
@@ -313,7 +348,7 @@ class Blockchain:
                    if h not in old_chain or old_chain[h].block_hash != new_chain[h].block_hash]
 
         self._chain = new_chain
-        self._storage.replace_all(list(self._chain.values()))
+        self._storage.replace_all([b._encode() for b in self._chain.values()])
         logger.info("Main chain now height %d tip %s (reverted %d, applied %d)",
                     new_tip.height, new_tip, len(reverted), len(applied))
         return reverted, applied

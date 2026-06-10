@@ -1,7 +1,7 @@
 import time
 
-from chain import Block, Blockchain, Transaction, make_genesis_block
-from crypto import compute_txs_hash, hash_transaction, mine_block, sha256
+from assignment_3.chain import Block, Blockchain, Transaction, make_genesis_block
+from assignment_3.crypto import compute_txs_hash, hash_transaction, mine_block, sha256
 
 def make_valid_block(chain: Blockchain, difficulty: int = 4, ts: int | None = None) -> Block:
     """Helper method to make a valid (empty) block. Pass `ts` to force a distinct block hash
