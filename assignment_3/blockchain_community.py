@@ -49,15 +49,8 @@ class BlockchainCommunity(Community):
 
         self.add_message_handler(AnnounceBlock, self.on_announce_block)
         self.add_message_handler(RequestBlock, self.on_request_block)
+        self.add_message_handler(BlockResponseInner, self.on_block_response_internal)
 
-        # Orphans
-        # TODO Refactor, this logic belongs in chain.py under Blockhain
-        # These are blocks that are correct, but unconnected for now.
-        # for example, a peer is ahead 2 blocks, and announes a new block.
-        # this block is correct, but we cant connect it to the chain yet.
-        self._orphans: dict[int, Block] = {}  # dict [height -> block]
-
-    
     def started(self) -> None:
         # TODO start miner
         # TODO should we schedule task to sync with peers? or do we trust we dont go out of sync?
@@ -207,16 +200,17 @@ class BlockchainCommunity(Community):
 
     @lazy_wrapper(RequestBlock)
     def on_request_block(self, peer: Peer, payload: RequestBlock) -> None:
-        """Handle request block request, SAME LOGIC AS ON_GET_BLOCK"""
+        """Handle an internal block request from a teammate. Same lookup as on_get_block, but we
+        reply with BlockResponseInner so the requester's on_block_response_internal handler fires."""
         block = self._chain.get_block(payload.height)
         if not block:
             self.logger.warning(f"Couldnt find a block a requested height: {payload.height}")
             return  # TODO no way to send failure right? mb other peers will have this height already
-        
+
         tx_hashes = b"".join([transaction.tx_hash for transaction in block.transactions])
         self.ez_send(
             peer,
-            BlockResponse(
+            BlockResponseInner(
                 height=block.height,
                 prev_hash=block.prev_hash,
                 txs_hash=block.txs_hash,
@@ -257,45 +251,41 @@ class BlockchainCommunity(Community):
             timestamp=payload.timestamp,
             difficulty=payload.difficulty,
             nonce=payload.nonce,
-            height=payload.height,transactions=()  # We dont have the transactions 
+            height=payload.height,
+            transactions=(),
         )
 
-        if self._chain.add_block(block):
-            self.logger.debug(f"Internal block response. Added block from peer {peer} to chain")
-            adtopted = self.adopt_orphans()
-            logger.info(f"Interal block resopnse: was able to adopt {len(adtopted)} orphans after this addition")
+        result = self._chain.add_block(block)
 
-            # Update the mining process to the new tip
-            self._mempool.remove_included([hash for tx in adtopted for hash in tx.tx_hashes])
-            self._mempool.remove_included(block.tx_hashes)
-            self._miner.mine(self._chain.tip)
-
+        if result.is_orphan:
+            # Parent unknown: the chain has parked this block. Ask for the previous height so we
+            # can backfill towards a block we already have. (height-based backfill for now.)
+            logger.info(f"Internal block response from peer {peer}: parked orphan at height {block.height}, "
+                        f"requesting parent at height {block.height - 1}")
+            self.ez_send(peer, RequestBlock(block.height - 1))
             return
-        
-        #TODO probably should not be here
-        #TODO maybe should keep track of it in forks if not the case height whise
-        if block.height > self._chain.height + 1:
-            self._orphans[block.height] = block
-            logger.info(f"Internal block response: from peer: {peer} was valid, but were unable to add to chain. incorrect height. "
-                        f"our height: {self._chain.height}, block height: {block.height}. requesting previous block and added to orphans")
-            self.ez_send(peer, RequestBlock(block.height-1))
+
+        if result.added:
+            self.logger.debug(f"Internal block response from peer {peer}: added block (extended_tip={result.extended_tip})")
+            self._reconcile_after_chain_update(result)
+
+    def _reconcile_after_chain_update(self, result) -> None:
+        """After a block was added, keep the mempool and miner consistent with the new best chain."""
+        if not result.extended_tip:
+            return  # block landed on a side branch; main chain unchanged
+
+        # Transactions that left the main chain in a reorg go back to the mempool...
+        for block in result.reverted:
+            for tx in block.transactions:
+                self._mempool.add(tx)
+        # ...and transactions now confirmed on the main chain are removed.
+        for block in result.applied:
+            self._mempool.remove_included(block.tx_hashes)
+
+        # Mine from the new tip.
+        self._miner.mine(self._chain.tip)
 
 
-    def adopt_orphans(self) -> list[Block]:
-        """Try to adopt orphans from the current pool"""
-        adopted = []
-        while True:
-            orphan = self._orphans.pop(self._chain.height + 1, None)
-            if not orphan:
-                break
-
-            if not self._chain.add_block(orphan):
-                break
-
-            adopted.append(orphan)
-        return adopted
-
-    
     def _announce_block(self, block: Block) -> None:
         """Broadcast the block to all known peers"""
         payload = AnnounceBlock(block.height, block.block_hash)
@@ -313,16 +303,18 @@ class BlockchainCommunity(Community):
     
     def _on_block_mined(self, block: Block) -> None:
         """Callback method that handles the actual logic of a mined block"""
-        if not self._chain.add_block(block):
-            self.logger.warning(f"Mined block was rejected form the chain. block: {block}")  # could be that during mining, we got a new tip
-            self._miner.mine(self._chain.tip)                                                # start mining a new block, from the new tip
+        result = self._chain.add_block(block)
+        if not result.added:
+            # Could be that during mining we already got this tip from a peer, or the tip moved on.
+            self.logger.warning(f"Mined block was rejected from the chain. block: {block}")
+            self._miner.mine(self._chain.tip)  # start mining a new block, from the current tip
             return
-        
-        # The block was successfully added to the chain. 
-        # - remove the transactions included from the mempool
+
+        # The block was successfully added.
+        # - reconcile the mempool against the (possibly reorged) main chain
         # - announce the block to all peers
-        # - start mining form the new block
+        # - keep mining from the current tip
         logger.info(f"Block added to chain: {block}")
-        self._mempool.remove_included(block.tx_hashes)
+        self._reconcile_after_chain_update(result)
         self._announce_block(block)
         self._miner.mine(self._chain.tip)

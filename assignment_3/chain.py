@@ -1,5 +1,5 @@
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .config import DEFAULT_DIFFICULTY
 from .crypto import compute_txs_hash, hash_header, satisfies_pow, sha256
@@ -42,7 +42,7 @@ class Block:
     prev_hash: bytes    # 32 bytes
     txs_hash: bytes     # 32 bytes
     timestamp: int      # unix seconds (8 bytes)
-    difficulty: int     # 4 bytes 
+    difficulty: int     # 4 bytes
     nonce: int          # 8 bytes
 
     # content
@@ -63,22 +63,38 @@ class Block:
         }
 
 
-    def verify_pow(self) -> bool:
-        """Checks if the hash of the header is correct, and satisfies the pow difficulty"""
+    def verify_header(self) -> bool:
+        """Checks the header is internally consistent: block_hash is the hash of the header,
+        and that hash satisfies the PoW difficulty. Does NOT need the transaction bodies."""
         expected = hash_header(self.prev_hash, self.txs_hash, self.timestamp, self.difficulty, self.nonce)
         return expected == self.block_hash and satisfies_pow(self.block_hash, self.difficulty)
+
+    def verify_pow(self) -> bool:
+        """Alias kept for clarity / tests. Same as verify_header."""
+        return self.verify_header()
 
     def verify_txs_hash(self) -> bool:
         """Checks if the txs_hash is the correct hash of all corresponding transaction hashes"""
         return compute_txs_hash([tx.tx_hash for tx in self.transactions]) == self.txs_hash
 
+    @property
+    def has_body(self) -> bool:
+        """True if we actually hold the transaction bodies for this block (or it is genuinely empty).
+        Header-only blocks received during sync have no bodies but a non-empty txs_hash."""
+        return bool(self.transactions) or self.txs_hash == compute_txs_hash([])
+
     def is_valid(self) -> bool:
-        """Check if this is a valid transaction. it is valid when:
-            - self.block_hash is a correct hash of all 5 header fields
-            - the block hash satisfies the pow difficulty
-            - self.txs_hash is the correct hash of all transaction hashes in this block
+        """Check if this block is valid for insertion. It is valid when:
+            - the header is consistent (block_hash hashes the header, satisfies PoW)
+            - if we have the transaction bodies, they hash to txs_hash
+        A header-only block (synced from a peer, bodies not yet fetched) is accepted on the
+        header alone; the body is verified separately once the transactions are available.
         """
-        return self.verify_pow() and self.verify_txs_hash()
+        if not self.verify_header():
+            return False
+        if self.has_body:
+            return self.verify_txs_hash()
+        return True
 
     @property
     def tx_hashes(self) -> list[bytes]:
@@ -88,7 +104,7 @@ class Block:
     def __repr__(self) -> str:
         return (
             f"<Block h={self.height} hash={self.block_hash.hex()[:8]}... "
-            f"nr_txs={len(self.transactions)} difficulty={self.difficulty}, height: {self.height}>"
+            f"nr_txs={len(self.transactions)} difficulty={self.difficulty}>"
         )
 
 
@@ -116,20 +132,57 @@ def make_genesis_block(difficulty: int = DEFAULT_DIFFICULTY) -> Block:
 
 
 # --------------------------------------
+# Add result
+# --------------------------------------
+@dataclass
+class AddResult:
+    """Outcome of Blockchain.add_block, so the caller can reconcile its mempool / mining.
+
+    added         : the block was new, valid, and connected to the tree
+    extended_tip  : the best (main) chain tip changed as a result (a plain extend or a reorg)
+    is_orphan     : the block was valid but its parent is unknown; it is parked until the parent arrives
+    missing_parent: the parent hash we are waiting for (only set when is_orphan)
+    reverted      : blocks that left the main chain in a reorg (their txs should go back to the mempool)
+    applied       : blocks that joined the main chain (their txs should be removed from the mempool)
+    """
+    added: bool = False
+    extended_tip: bool = False
+    is_orphan: bool = False
+    missing_parent: bytes | None = None
+    reverted: list[Block] = field(default_factory=list)
+    applied: list[Block] = field(default_factory=list)
+
+    def __bool__(self) -> bool:
+        # Keeps `if chain.add_block(b):` / `assert chain.add_block(b)` reading as "was it added".
+        return self.added
+
+
+# --------------------------------------
 # Blockchain
 # --------------------------------------
 class Blockchain:
-    """
-    The blockchain, the chain is a linear representation of the longest chain. 
-    It is a simple dict with {height -> block}.
+    """A block tree with longest-chain selection.
 
-    If there are forks, we track them in another dict. {split_block_hash -> fork_chain}.
-    If an fork would overtake the chain, they should be swapped.
+    All connected blocks (reachable from genesis) live in `_blocks`, keyed by block_hash and
+    linked to their parent through `prev_hash`. The current best chain is materialised in `_main`
+    (height -> block) so height lookups stay O(1). When a newly connected block gives a branch
+    that is strictly taller than the current tip we reorg the main chain onto it.
+
+    Blocks whose parent we do not have yet are parked in `_orphans`, keyed by the parent hash they
+    are waiting for. When that parent finally connects, the waiting children are adopted (recursively).
+    The orphan pool is bounded to avoid a memory-exhaustion DoS from bogus high-height blocks.
     """
 
-    def __init__(self, genesis: Block) -> None:
+    def __init__(self, genesis: Block, max_orphans: int = 1000) -> None:
+        self._genesis = genesis
+        self._blocks: dict[bytes, Block] = {genesis.block_hash: genesis}
+        # The committed best chain, one block per height
         self._chain: dict[int, Block] = {0: genesis}
-        self._forks: dict[bytes, list[Block]] = {} 
+
+        # parent_hash we are missing -> {block_hash -> block}
+        self._orphans: dict[bytes, dict[bytes, Block]] = {}
+        self._orphan_hashes: set[bytes] = set()
+        self._max_orphans = max_orphans
 
     @property
     def height(self) -> int:
@@ -145,72 +198,112 @@ class Blockchain:
         """Get the block on the specified height, None if it doesnt exist"""
         return self._chain.get(height, None)
 
+    def get_block_by_hash(self, block_hash: bytes) -> Block | None:
+        """Get any known (connected) block by its hash, None if unknown"""
+        return self._blocks.get(block_hash, None)
+
     def contains(self, block_hash: bytes) -> bool:
         """Checks if the provided block hash is present in the current chain"""
-        return any(b.block_hash == block_hash for b in self._chain.values())
+        block = self.get_block_by_hash(block_hash)
+        return block is not None and self._chain.get(block.height) is block
 
-    def add_block(self, block: Block) -> bool:
-        """Add a block to the current chain. Returns true if the current block is accepted.
-        Checks:
-          - provided block is valid (pow, hashes)
-          - provided block height is correct (current lenght + 1)
-          - block.prev_hash is same as chain.tip.block_hash
+    def knows(self, block_hash: bytes) -> bool:
+        """Checks if we have seen this block at all, either connected or parked as an orphan"""
+        return block_hash in self._blocks or block_hash in self._orphan_hashes
+
+    def add_block(self, block: Block) -> AddResult:
+        """Add a block to the tree, reorging the main chain if the block yields a taller branch.
+
+        Returns an AddResult describing what happened (added / reorg / orphan), so the caller can
+        keep its mempool and miner in sync.
         """
         if not block.is_valid():
             logger.warning("Rejected invalid block %s", block)
-            return False
+            return AddResult()
 
-        if block.prev_hash != self.tip.block_hash:
-            logger.debug(f"Block prev_hash mismatch, provided prev_hash was not hash of current tip. Height: {block.height}")
-            return False
+        if self.knows(block.block_hash):
+            logger.debug("Block already known, ignoring %s", block)
+            return AddResult()
 
-        self._chain[block.height] = block
-        logger.info(f"Accepted block {block}")
-        return True
+        parent = self._blocks.get(block.prev_hash)
+        if parent is None:
+            # We can't connect it yet, park it until its parent shows up.
+            self._add_orphan(block)
+            return AddResult(is_orphan=True, missing_parent=block.prev_hash)
 
-    def try_fork_switch(self, incoming_chain: list[Block]) -> bool:
+        if block.height != parent.height + 1:
+            logger.debug("Block height mismatch: parent at %d, block claims %d", parent.height, block.height)
+            return AddResult()
+
+        # Store it and pull in any orphans that were waiting on it (recursively).
+        self._store_and_cascade(block)
+
+        result = AddResult(added=True)
+
+        # Longest-chain rule: only switch on a strictly taller branch (ties keep the current tip).
+        best = max(self._blocks.values(), key=lambda b: b.height)
+        if best.height > self.height:
+            result.reverted, result.applied = self._reorg(best)
+            result.extended_tip = True
+
+        return result
+
+    # --------------------------------------
+    # Internal helpers
+    # --------------------------------------
+    def _add_orphan(self, block: Block) -> None:
+        """Park a valid-but-unconnected block, bounded so peers can't blow up our memory."""
+        if len(self._orphan_hashes) >= self._max_orphans:
+            logger.warning("Orphan pool full (%d), dropping %s", self._max_orphans, block)
+            return
+        self._orphans.setdefault(block.prev_hash, {})[block.block_hash] = block
+        self._orphan_hashes.add(block.block_hash)
+        logger.debug("Parked orphan %s waiting on parent %s", block, block.prev_hash.hex()[:8])
+
+    def _store_and_cascade(self, block: Block) -> list[Block]:
+        """Store `block`, then adopt any orphans waiting on it, and their children, etc."""
+        newly: list[Block] = []
+        stack = [block]
+        while stack:
+            current = stack.pop()
+            self._blocks[current.block_hash] = current
+            newly.append(current)
+
+            waiting = self._orphans.pop(current.block_hash, {})
+            for child in waiting.values():
+                self._orphan_hashes.discard(child.block_hash)
+                if child.height == current.height + 1:
+                    stack.append(child)
+                else:
+                    logger.debug("Dropping orphan %s, height inconsistent with parent %s", child, current)
+        return newly
+
+    def _reorg(self, new_tip: Block) -> tuple[list[Block], list[Block]]:
+        """Rebuild the main chain to run from genesis up to `new_tip`.
+        Returns (reverted, applied): blocks that left and joined the main chain.
         """
-        Longest-chain rule: if `incoming_chain` (ordered from its fork point
-        up to its tip) is longer than our current chain, replace ours.
+        # Walk back from the new tip to genesis to get the new main path.
+        # Every stored block must connect to genesis (invariant of _store_and_cascade), so
+        # we index _blocks directly: a missing parent is a broken invariant -> fail loud (KeyError).
+        path: list[Block] = []
+        cursor = new_tip
+        while cursor.block_hash != self._genesis.block_hash:
+            path.append(cursor)
+            cursor = self._blocks[cursor.prev_hash]
+        path.append(cursor)  # genesis
+        path.reverse()
+        new_chain = {b.height: b for b in path}
 
-        `incoming_chain` must be a list of consecutive, validated blocks
-        starting right after a common ancestor that exists in our chain.
+        old_chain = self._chain
+        reverted = [old_chain[h] for h in sorted(old_chain)
+                    if h not in new_chain or new_chain[h].block_hash != old_chain[h].block_hash]
+        applied = [new_chain[h] for h in sorted(new_chain)
+                   if h not in old_chain or old_chain[h].block_hash != new_chain[h].block_hash]
 
-        Returns True if we switched.
-        """
-        if not incoming_chain:
-            return False
-
-        fork_root_height = incoming_chain[0].height - 1  # height where fork split off
-        common_ancestor = self.get_block(fork_root_height)
-        if common_ancestor is None:
-            logger.warning("Fork switch: common ancestor not found")
-            return False
-
-        # validate the whole fork chain
-        prev = common_ancestor
-        for block in incoming_chain:
-            if block.prev_hash != prev.block_hash or not block.is_valid():
-                logger.warning("Fork switch: invalid block in incoming chain")
-                return False
-            prev = block
-
-        # check if the fork is longer than our current chain
-        # if it isn't longer, we dont need to switch
-        incoming_tip = incoming_chain[-1].height
-        if incoming_tip <= self.height:
-            return False 
-
-        # the fork becomes the chain, and the chain becomes a fork
-        old_height = self.height
-        old_chain_part = [self._chain[height] for height in range(fork_root_height + 1, old_height + 1)]
-        self._forks[common_ancestor.block_hash] = old_chain_part
-
-        for block in incoming_chain:
-            self._chain[block.height] = block
-
-        logger.info(f"Switched to fork: new tip {self.tip} (chain was height {old_height}, now is {incoming_tip})")
-        return True
+        self._chain = new_chain
+        logger.info("Main chain now height %d tip %s (reverted %d, applied %d)",
+                    new_tip.height, new_tip, len(reverted), len(applied))
+        return reverted, applied
 
     def __repr__(self) -> str:
-        return f"<Blockchain height={self.height} tip={self.tip}>"
+        return f"<Blockchain height={self.height} tip={self.tip} known={len(self._blocks)} orphans={len(self._orphan_hashes)}>"

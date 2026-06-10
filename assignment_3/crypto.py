@@ -101,5 +101,6 @@ def mine_block(prev_hash: bytes, txs_hash: bytes, timestamp: int, difficulty: in
 
         if satisfies_pow(block_hash, difficulty):
             return nonce, block_hash
+        nonce += 1
 
     return (None, None)

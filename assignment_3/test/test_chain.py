@@ -1,14 +1,14 @@
 import time
-import pytest
 
-from ..chain import Block, Blockchain, Transaction, make_genesis_block
-from ..crypto import compute_txs_hash, hash_transaction, mine_block, sha256
+from chain import Block, Blockchain, Transaction, make_genesis_block
+from crypto import compute_txs_hash, hash_transaction, mine_block, sha256
 
-def make_valid_block(chain: Blockchain, difficulty: int = 4) -> Block:
-    """Helper method to make a valid (empty) block"""
+def make_valid_block(chain: Blockchain, difficulty: int = 4, ts: int | None = None) -> Block:
+    """Helper method to make a valid (empty) block. Pass `ts` to force a distinct block hash
+    (two empty blocks with the same parent and timestamp would otherwise be identical)."""
     tip = chain.tip
     txs_hash = compute_txs_hash([])
-    ts = int(time.time())
+    ts = int(time.time()) if ts is None else ts
     nonce, block_hash = mine_block(tip.block_hash, txs_hash, ts, difficulty)
 
     return Block(
@@ -159,29 +159,34 @@ def test_chain_get_block():
     assert chain.get_block(1) is None
 
 def test_fork_switch_longer_chain_wins():
-    """Test if switching forks goes as planned when fork is longer"""
+    """A competing branch that becomes strictly taller should take over the main chain"""
     chain = Blockchain(make_genesis_block())
     b1 = make_valid_block(chain)
     chain.add_block(b1)
 
-    # build a competing fork, that split from genesis
+    # build a competing fork, that split from genesis (distinct timestamps -> distinct hashes)
     genesis = chain.get_block(0)
     assert genesis
     fork_chain = Blockchain(genesis)
-    f1 = make_valid_block(fork_chain)
+    f1 = make_valid_block(fork_chain, ts=b1.timestamp + 1000)
     fork_chain.add_block(f1)
-    f2 = make_valid_block(fork_chain)
+    f2 = make_valid_block(fork_chain, ts=b1.timestamp + 2000)
     fork_chain.add_block(f2)
 
-    # forked chain is height 2, orignal 1. they should switch
-    switched = chain.try_fork_switch([f1, f2])
-    assert switched
+    # f1 only ties our height (1) -> stored as a side branch, no reorg
+    r1 = chain.add_block(f1)
+    assert r1.added and not r1.extended_tip
+    assert chain.tip == b1
+
+    # f2 makes the fork height 2 > our 1 -> reorg onto it, b1 is reverted
+    r2 = chain.add_block(f2)
+    assert r2.added and r2.extended_tip
     assert chain.height == 2
-    assert chain._forks[genesis.block_hash]
-    assert len(chain._forks[genesis.block_hash]) == 1 
+    assert chain.tip == f2
+    assert b1 in r2.reverted
 
 def test_fork_switch_shorter_chain_ignored():
-    """Test that if fork is shorter than current chain, we dont swap"""
+    """A competing branch shorter than the current chain must not take over"""
     chain = Blockchain(make_genesis_block())
     b1 = make_valid_block(chain)
     chain.add_block(b1)
@@ -192,9 +197,55 @@ def test_fork_switch_shorter_chain_ignored():
     genesis = chain.get_block(0)
     assert genesis
     fork_chain = Blockchain(genesis)
-    f1 = make_valid_block(fork_chain)
+    f1 = make_valid_block(fork_chain, ts=b1.timestamp + 1000)
     fork_chain.add_block(f1)
 
-    switched = chain.try_fork_switch([f1])
-    assert not switched
+    r = chain.add_block(f1)
+    assert r.added and not r.extended_tip   # stored, but no reorg
     assert chain.height == 2
+    assert chain.tip == b2
+
+
+def test_orphan_adopted_when_parent_arrives():
+    """A block whose parent we don't have yet is parked, then adopted once the parent connects"""
+    chain = Blockchain(make_genesis_block())
+    # mine a real parent/child pair on a throwaway chain (same deterministic genesis)
+    builder = Blockchain(make_genesis_block())
+    b1 = make_valid_block(builder)
+    builder.add_block(b1)
+    b2 = make_valid_block(builder)
+    builder.add_block(b2)
+
+    # deliver the child first: parent unknown -> parked as orphan, tip unchanged
+    r_child = chain.add_block(b2)
+    assert not r_child.added
+    assert r_child.is_orphan
+    assert r_child.missing_parent == b1.block_hash
+    assert chain.height == 0
+
+    # now the parent arrives: it connects AND pulls in the parked child
+    r_parent = chain.add_block(b1)
+    assert r_parent.added and r_parent.extended_tip
+    assert chain.height == 2
+    assert chain.tip == b2
+
+
+def test_orphan_pool_bounded():
+    """The orphan pool must not grow without bound (DoS guard)"""
+    chain = Blockchain(make_genesis_block(), max_orphans=1)
+
+    builder = Blockchain(make_genesis_block())
+    b1 = make_valid_block(builder)
+    builder.add_block(b1)
+    b2 = make_valid_block(builder)                          # parent b1 is unknown to chain -> orphan
+
+    other = Blockchain(make_genesis_block())
+    x1 = make_valid_block(other, ts=b1.timestamp + 1000)    # distinct from b1 -> distinct subtree
+    other.add_block(x1)
+    x2 = make_valid_block(other, ts=b1.timestamp + 2000)    # parent x1 is unknown to chain -> orphan
+
+    chain.add_block(b2)                                     # parked, pool now full (size 1)
+    assert chain.knows(b2.block_hash)
+
+    chain.add_block(x2)                                     # pool full -> dropped
+    assert not chain.knows(x2.block_hash)
