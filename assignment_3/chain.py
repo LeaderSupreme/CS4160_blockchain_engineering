@@ -1,6 +1,7 @@
 import logging
 from dataclasses import dataclass, field
 
+from .storage import BlockStorage, InMemoryStorage
 from .config import DEFAULT_DIFFICULTY
 from .crypto import compute_txs_hash, hash_header, satisfies_pow, sha256
 
@@ -173,16 +174,23 @@ class Blockchain:
     The orphan pool is bounded to avoid a memory-exhaustion DoS from bogus high-height blocks.
     """
 
-    def __init__(self, genesis: Block, max_orphans: int = 1000) -> None:
-        self._genesis = genesis
-        self._blocks: dict[bytes, Block] = {genesis.block_hash: genesis}
-        # The committed best chain, one block per height
-        self._chain: dict[int, Block] = {0: genesis}
-
+    def __init__(self, genesis: Block, max_orphans: int = 1000, storage: BlockStorage = InMemoryStorage()) -> None:
         # parent_hash we are missing -> {block_hash -> block}
         self._orphans: dict[bytes, dict[bytes, Block]] = {}
         self._orphan_hashes: set[bytes] = set()
         self._max_orphans = max_orphans
+
+        self._storage = storage
+        loaded_data = self._storage.load()
+        if loaded_data and len(loaded_data) > 0:
+            self._chain = {b.height: b for b in loaded_data}
+            self._blocks: dict[bytes, Block] = {b.block_hash: b for b in loaded_data} 
+            self._genesis = loaded_data[0]
+        else:
+            self._chain = {0: genesis}
+            self._genesis = genesis
+            self._blocks: dict[bytes, Block] = {genesis.block_hash: genesis}
+            storage.append(genesis)
 
     @property
     def height(self) -> int:
@@ -246,6 +254,10 @@ class Blockchain:
             result.reverted, result.applied = self._reorg(best)
             result.extended_tip = True
 
+        if block.height == self.height:
+            # Persist this block
+            self._storage.append(block)
+
         return result
 
     # --------------------------------------
@@ -301,6 +313,7 @@ class Blockchain:
                    if h not in old_chain or old_chain[h].block_hash != new_chain[h].block_hash]
 
         self._chain = new_chain
+        self._storage.replace_all(list(self._chain.values()))
         logger.info("Main chain now height %d tip %s (reverted %d, applied %d)",
                     new_tip.height, new_tip, len(reverted), len(applied))
         return reverted, applied
