@@ -2,8 +2,8 @@ import time
 
 from typing import Callable
 
-from chain import Block
-from config import (
+from .chain import Block
+from .config import (
     DEFAULT_DIFFICULTY,
     MAX_DIFFICULTY,
     MIN_DIFFICULTY,
@@ -56,7 +56,7 @@ class DynamicDifficultyPolicy:
 
         # If the ratio > 1 -> slower than target so decrease difficulty
         # if ther ation < 1 -> faster than target, so increase difficulty
-        ratio = self._ema / TARGET_BLOCK_TIME_S
+        ratio = TARGET_BLOCK_TIME_S / self._ema
         ratio = max(1.0 / MAX_ADJUSTMENT, min(MAX_ADJUSTMENT, ratio))
 
         new_diff = tip.difficulty * ratio

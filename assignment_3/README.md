@@ -20,3 +20,9 @@ To run all tests:
 ```bash
 uv run pytest assignment_3/tests -v
 ```
+
+## Run the project
+
+```bash
+uv run python -m assignment_3/client
+```

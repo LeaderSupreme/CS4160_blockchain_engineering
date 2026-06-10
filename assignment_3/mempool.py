@@ -2,7 +2,7 @@ import logging
 
 from typing import Callable
 
-from chain import Transaction
+from .chain import Transaction
 
 
 logger = logging.getLogger(__name__)
