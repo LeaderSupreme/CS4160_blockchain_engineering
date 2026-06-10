@@ -89,5 +89,8 @@ class RegisteringCommunity(Community):
         print(f"Message: {payload.message}")
         print("==============================\n")
         self.logger.info(f"Registration reponse from server. Success: {payload.success}, msg: {payload.success}")
+
+        if payload.success:
+            await self.unload()
  
         # asyncio.get_event_loop().stop() # probably need to find a cleaner way to stop the execution

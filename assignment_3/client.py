@@ -3,11 +3,11 @@ import asyncio
 from pathlib import Path
 
 from chain import Blockchain, make_genesis_block
-from difficulty import FixedDifficultyPolicy
+from difficulty import DynamicDifficultyPolicy, FixedDifficultyPolicy
 from mempool import Mempool
 from peers import TrustedPeers
 
-from config import PERSONAL_KEY_FILE, DIFFICULTY
+from config import PERSONAL_KEY_FILE, DEFAULT_DIFFICULTY
 from blockchain_community import BlockchainCommunity
 from registering_community import RegisteringCommunity
  
@@ -26,10 +26,10 @@ logging.basicConfig(level=logging.DEBUG)
 async def main():
     key_path = Path(PERSONAL_KEY_FILE)
 
-    blockchain = Blockchain(make_genesis_block(DIFFICULTY))
+    blockchain = Blockchain(make_genesis_block(DEFAULT_DIFFICULTY))
     mempool = Mempool(max_size=1000)
     trusted_peers = TrustedPeers()
-    difficulty_policy = FixedDifficultyPolicy()
+    difficulty_policy = DynamicDifficultyPolicy(blockchain.get_block)
      
  
     builder = ConfigBuilder()
