@@ -2,14 +2,14 @@ import logging
 import asyncio
 from pathlib import Path
 
-from chain import Blockchain, make_genesis_block
-from difficulty import DynamicDifficultyPolicy, FixedDifficultyPolicy
-from mempool import Mempool
-from peers import TrustedPeers
+from .chain import Blockchain, make_genesis_block
+from .difficulty import DynamicDifficultyPolicy, FixedDifficultyPolicy
+from .mempool import Mempool
+from .peers import TrustedPeers
 
-from config import PERSONAL_KEY_FILE, DEFAULT_DIFFICULTY
-from blockchain_community import BlockchainCommunity
-from registering_community import RegisteringCommunity
+from .config import PERSONAL_KEY_FILE, DEFAULT_DIFFICULTY
+from .blockchain_community import BlockchainCommunity
+from .registering_community import RegisteringCommunity
  
 from ipv8.configuration import ConfigBuilder, Strategy, WalkerDefinition, default_bootstrap_defs
 from ipv8_service import IPv8

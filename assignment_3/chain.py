@@ -1,8 +1,8 @@
 import logging
 from dataclasses import dataclass
 
-from config import DEFAULT_DIFFICULTY
-from crypto import compute_txs_hash, hash_header, satisfies_pow, sha256
+from .config import DEFAULT_DIFFICULTY
+from .crypto import compute_txs_hash, hash_header, satisfies_pow, sha256
 
 logger = logging.getLogger(__name__)
 

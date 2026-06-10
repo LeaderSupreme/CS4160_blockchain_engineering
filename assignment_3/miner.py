@@ -1,14 +1,13 @@
-import os
 import time
 import logging
 import threading
-import crypto
 
 from typing import Callable
 
-from chain import Blockchain, Block, Transaction
-from difficulty import DifficultyPolicy
-from mempool import Mempool
+from . import crypto
+from .chain import Block 
+from .difficulty import DifficultyPolicy
+from .mempool import Mempool
 
 logger = logging.getLogger(__name__)
 
