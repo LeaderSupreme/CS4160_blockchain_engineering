@@ -208,13 +208,13 @@ class Blockchain:
     The orphan pool is bounded to avoid a memory-exhaustion DoS from bogus high-height blocks.
     """
 
-    def __init__(self, genesis: Block, max_orphans: int = 1000, storage: BlockStorage = InMemoryStorage()) -> None:
+    def __init__(self, genesis: Block, max_orphans: int = 1000, storage: BlockStorage | None = None) -> None:
         # parent_hash we are missing -> {block_hash -> block}
         self._orphans: dict[bytes, dict[bytes, Block]] = {}
         self._orphan_hashes: set[bytes] = set()
         self._max_orphans = max_orphans
 
-        self._storage = storage
+        self._storage = storage if storage is not None else InMemoryStorage()
         loaded_data = self._storage.load()
         if loaded_data and len(loaded_data) > 0:
             decoded_loaded_data = [Block._decode(b) for b in loaded_data]
@@ -225,7 +225,7 @@ class Blockchain:
             self._chain = {0: genesis}
             self._blocks: dict[bytes, Block] = {genesis.block_hash: genesis}
             self._genesis = genesis
-            storage.append(genesis._encode())
+            self._storage.append(genesis._encode())
 
     @property
     def height(self) -> int:
@@ -290,7 +290,7 @@ class Blockchain:
             result.extended_tip = True
 
         if block.height == self.height:
-            # Persist this block
+            # We only persist the current chain
             self._storage.append(block._encode())
 
         return result
