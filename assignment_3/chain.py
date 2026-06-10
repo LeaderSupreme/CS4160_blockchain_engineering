@@ -17,6 +17,16 @@ class Transaction:
     signature: bytes
     tx_hash: bytes
 
+    def to_dict(self) -> dict:
+        """Serialise a Transaction to a plain dict of primitive types."""
+        return {
+            "sender_key": self.sender_key,
+            "data":       self.data,
+            "timestamp":  self.timestamp,
+            "signature":  self.signature,
+            "tx_hash":    self.tx_hash,
+        }
+
     def __repr__(self) -> str:
         return f"<Tx {self.tx_hash.hex()[:12]}...>"
 
@@ -38,6 +48,20 @@ class Block:
     # content
     height: int
     transactions: tuple[Transaction, ...]
+
+    def to_dict(self) -> dict:
+        """Serialise a Block to a plain dict of primitive types."""
+        return {
+            "height":       self.height,
+            "prev_hash":    self.prev_hash,
+            "txs_hash":     self.txs_hash,
+            "timestamp":    self.timestamp,
+            "difficulty":   self.difficulty,
+            "nonce":        self.nonce,
+            "block_hash":   self.block_hash,
+            "transactions": [tx.to_dict() for tx in self.transactions],
+        }
+
 
     def verify_pow(self) -> bool:
         """Checks if the hash of the header is correct, and satisfies the pow difficulty"""
@@ -134,11 +158,6 @@ class Blockchain:
         """
         if not block.is_valid():
             logger.warning("Rejected invalid block %s", block)
-            return False
-
-        expected_height = self.height + 1
-        if block.height != expected_height:
-            logger.debug(f"Block height mismatch: expected {expected_height} got {block.height}")
             return False
 
         if block.prev_hash != self.tip.block_hash:
