@@ -253,7 +253,7 @@ class BlockchainCommunity(Community):
             return
 
         if added and not was_known:
-            logger.info(f"Accepted gossiped transaction {tx} from peer {peer}")
+            logger.info(f"Accepted gossiped transaction {tx} from peer {peer}, new height: {self._chain.height}")
             self._broadcast_transaction(tx, exclude_peer=peer)
 
 

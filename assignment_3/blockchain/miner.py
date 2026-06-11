@@ -81,6 +81,7 @@ class Miner:
         while not self._stop_event.is_set():
             with self._tip_lock:
                 tip = self._tip
+            self.interrupt.clear()
             self._mine_one_block(tip, worker_id)
 
     def _mine_one_block(self, tip: Block, worker_id: int) -> None:
