@@ -43,7 +43,8 @@ class Miner:
         self._stop_event.clear()
         self._found = False
         self._workers = []
-        self._tip = tip
+        if tip is not None:
+            self._tip = tip
 
         for i in range(self._num_threads):
             thread = threading.Thread(target=self._mine_loop, args=(i,), name=f"miner-{i}", daemon=True)
@@ -99,7 +100,7 @@ class Miner:
         txs_hash = crypto.compute_txs_hash(tx_hashes)
         timestamp = int(time.time())
         prev_hash = tip.block_hash
-        logger.debug(f"Thread {worker_id} Mining block height={tip.height} difficulty={difficulty} nr_txs={len(pending)}")
+        logger.info(f"Thread {worker_id} Mining block height={tip.height} difficulty={difficulty} nr_txs={len(pending)}")
 
         # We interleave the search space for multi threaded mining.
         nonce = worker_id 

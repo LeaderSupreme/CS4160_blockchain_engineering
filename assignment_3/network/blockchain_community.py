@@ -69,8 +69,7 @@ class BlockchainCommunity(Community):
     
     def started(self) -> None:
         self._loop = asyncio.get_running_loop()
-        self._miner.mine(self._chain.tip)
-        self._miner.start()
+        self._miner.start(self._chain.tip)
         self.register_task(
             "chain_sync",
             self._sync_chains,
