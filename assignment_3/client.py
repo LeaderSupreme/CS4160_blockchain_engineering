@@ -57,7 +57,7 @@ async def main():
         False,
     )
 
-    if args.register_to_server:
+    if not args.register_to_server:
         builder.add_overlay(
             "RegisteringCommunity",
             "my peer",

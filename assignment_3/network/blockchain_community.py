@@ -54,6 +54,8 @@ class BlockchainCommunity(Community):
     def started(self) -> None:
         # TODO start miner
         # TODO should we schedule task to sync with peers? or do we trust we dont go out of sync?
+        self._miner.start()
+        self._miner.mine(self._chain.tip)
         pass
  
 
@@ -86,7 +88,7 @@ class BlockchainCommunity(Community):
             - Add the transaction to the mempool
             - Respond
         """
-        logger.debug(f"Peer: {peer}, submitted transaction: {payload}")
+        logger.info(f"Peer: {peer}, submitted transaction: {payload}")
 
         # Verify the signature
         sender_key = self.crypto.key_from_public_bin(payload.sender_key)
@@ -221,7 +223,7 @@ class BlockchainCommunity(Community):
                 tx_hashes=tx_hashes
             )
         )
-        self.logger.debug(f"Successfully returned requested block at height: {payload.height} to peer: {peer}")
+        self.logger.info(f"Successfully returned requested block at height: {payload.height} to peer: {peer}")
 
     @lazy_wrapper(BlockResponseInner)
     def on_block_response_internal(self, peer: Peer, payload: BlockResponseInner) -> None:
