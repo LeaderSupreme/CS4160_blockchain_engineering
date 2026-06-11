@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import argparse
 from pathlib import Path
 
 from .blockchain.chain import Blockchain, make_genesis_block
@@ -25,7 +26,9 @@ logging.getLogger("RegisteringCommunity").addFilter(_UnsupportedCurveFilter())
 logging.basicConfig(level=logging.DEBUG)
 
 async def main():
-    key_path = Path(PERSONAL_KEY_FILE)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--key_path", required=False, help="path to the key file (default = PERSONAL_KEY_FILE)", default=PERSONAL_KEY_FILE)
+    args = parser.parse_args()
 
     storage_path = Path("assignment_3")
     blockchain = Blockchain(make_genesis_block(DEFAULT_DIFFICULTY), storage=WALStorage(storage_path))
@@ -37,7 +40,7 @@ async def main():
     builder = ConfigBuilder()
     builder.clear_keys()
     builder.clear_overlays()
-    builder.add_key("my peer", "curve25519", str(key_path))
+    builder.add_key("my peer", "curve25519", str(args.key_path))
     builder.add_overlay(
         "RegisteringCommunity",
         "my peer",
