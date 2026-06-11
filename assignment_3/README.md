@@ -5,7 +5,7 @@
 To run all tests:
 
 ```bash
-uv run pytest assignment_3/tests -v
+uv run pytest assignment_3/test -v
 ```
 
 ## Run the project
