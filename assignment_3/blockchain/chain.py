@@ -143,7 +143,7 @@ class Block:
         )
 
 
-def make_genesis_block(difficulty: int = DEFAULT_DIFFICULTY) -> Block:
+def make_genesis_block(difficulty: int = DEFAULT_DIFFICULTY, prev_hash = b"\x00" * 32) -> Block:
     """The chain needs a genesis block. It needs to be identical on all nodes, so we hardcode it to make it easy.
 
     genesis block:
@@ -156,12 +156,12 @@ def make_genesis_block(difficulty: int = DEFAULT_DIFFICULTY) -> Block:
     """
     return Block(
         height=0,
-        prev_hash=b"\x00" * 32,
+        prev_hash=prev_hash,
         txs_hash=sha256(b""),
         timestamp=0,
         difficulty=difficulty,
         nonce=0,
-        block_hash=hash_header(b"\x00" * 32, sha256(b""), 0, difficulty, 0),
+        block_hash=hash_header(prev_hash, sha256(b""), 0, difficulty, 0),
         transactions=(),
     )
 
@@ -208,7 +208,7 @@ class Blockchain:
     The orphan pool is bounded to avoid a memory-exhaustion DoS from bogus high-height blocks.
     """
 
-    def __init__(self, genesis: Block, max_orphans: int = 1000, storage: BlockStorage | None = None) -> None:
+    def __init__(self, genesisses: list[Block], max_orphans: int = 1000, storage: BlockStorage | None = None) -> None:
         # parent_hash we are missing -> {block_hash -> block}
         self._orphans: dict[bytes, dict[bytes, Block]] = {}
         self._orphan_hashes: set[bytes] = set()
@@ -222,10 +222,12 @@ class Blockchain:
             self._blocks: dict[bytes, Block] = {b.block_hash: b for b in decoded_loaded_data} 
             self._genesis = self._chain[0]
         else:
-            self._chain = {0: genesis}
-            self._blocks: dict[bytes, Block] = {genesis.block_hash: genesis}
-            self._genesis = genesis
-            self._storage.append(genesis._encode())
+            self._chain = {i: b for i, b in enumerate(genesisses)}
+            self._blocks: dict[bytes, Block] = {b.block_hash: b for b in genesisses}
+            self._genesis = genesisses[0]
+            logger.info(f"Started fresh blockchain, we have {len(self._chain)} start nodes, keys are: {list(self._chain.keys())}. Current height: {self.height}")
+            for b in genesisses:
+                self._storage.append(b._encode())
 
     @property
     def height(self) -> int:

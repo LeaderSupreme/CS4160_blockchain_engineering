@@ -486,7 +486,7 @@ class BlockchainCommunity(Community):
 
         logger.debug(
             f"Internal block response: received stale or forked block at height {block.height}; "
-            f"local height is {self._chain.height}"
+            f"local height is {self._chain.height}, current txs in mempool: {len(self._mempool)}"
         )
 
 

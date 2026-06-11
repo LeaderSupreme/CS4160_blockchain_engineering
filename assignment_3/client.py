@@ -36,10 +36,14 @@ async def main():
     storage_path = Path("assignment_3")
     if args.start_fresh:
         path = Path(storage_path, _WAL_FILENAME)
-        print(f"Delete the current chain storage at: {path}")
-        os.remove(path)
+        if os.path.exists(path):
+            print(f"Delete the current chain storage at: {path}")
+            os.remove(path)
 
-    blockchain = Blockchain(make_genesis_block(DEFAULT_DIFFICULTY), storage=WALStorage(storage_path))
+    genisses = [make_genesis_block(DEFAULT_DIFFICULTY)]
+    for i in range(1, 3):
+        genisses.append(make_genesis_block(DEFAULT_DIFFICULTY, prev_hash=genisses[i-1].block_hash))
+    blockchain = Blockchain(genisses, storage=WALStorage(storage_path))
     mempool = Mempool(max_size=1000)
     trusted_peers = TrustedPeers()
     difficulty_policy = DynamicDifficultyPolicy(blockchain.get_block)
