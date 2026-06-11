@@ -10,6 +10,7 @@ from .difficulty import DifficultyPolicy
 from .mempool import Mempool
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 class Miner:
     """Mining class that is stateless with respect to the chain.
@@ -33,14 +34,16 @@ class Miner:
         self._found_lock = threading.Lock()
         self._found = False
 
-    def start(self) -> None:
+    def start(self, tip = None) -> None:
         """Start the mining process, or continue if already started"""
+        logger.debug("Miner start called")
         if self._thread and self._thread.is_alive():
             return
 
         self._stop_event.clear()
         self._found = False
         self._workers = []
+        self._tip = tip
 
         for i in range(self._num_threads):
             thread = threading.Thread(target=self._mine_loop, args=(i,), name=f"miner-{i}", daemon=True)
@@ -62,13 +65,17 @@ class Miner:
 
     def mine(self, tip: Block) -> None:
         """Starts mining from the provided tip. If we were mining for another block we interrupt it."""
+        assert tip is not None, "passed None to mine function"
         with self._tip_lock:
             self._tip = tip
         self.interrupt.set()
-        logger.debug(f"Starting to mine at tip: {tip}")
+        logger.info(f"Starting to mine at tip: {tip}")
 
     def _mine_loop(self, worker_id) -> None:
         """Keep trying to mine a block, so long we are not interrupted by the interupt event"""
+        if self._tip is None:
+            return
+
         while not self._stop_event.is_set():
             with self._tip_lock:
                 tip = self._tip

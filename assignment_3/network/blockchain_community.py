@@ -54,8 +54,7 @@ class BlockchainCommunity(Community):
     def started(self) -> None:
         # TODO start miner
         # TODO should we schedule task to sync with peers? or do we trust we dont go out of sync?
-        self._miner.start()
-        self._miner.mine(self._chain.tip)
+        self._miner.start(self._chain.tip)
         pass
  
 
@@ -136,6 +135,7 @@ class BlockchainCommunity(Community):
                 message="Added transcaction to pool"
             )
         )
+        self._miner.mine(self._chain.tip)
         self.logger.debug(f"Submittransaction from peer: {peer}, was successfully added")
 
 
@@ -143,7 +143,7 @@ class BlockchainCommunity(Community):
     def on_get_chain_height(self, peer: Peer, payload: GetChainHeight) -> None:
         """Handle a request for the current chain height"""
         current_tip = self._chain.tip
-        self.logger.debug(f"Handeling get chain height request from peer: {peer}. Current tip: {current_tip}")
+        self.logger.debug(f"Handeling get chain height request from peer: {peer}. Current tip: {current_tip}. Current height: {current_tip.height}")
         self.ez_send(
             peer,
             ChainHeightResponse(

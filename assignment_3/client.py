@@ -1,3 +1,4 @@
+import os
 import logging
 import asyncio
 import argparse
@@ -6,7 +7,7 @@ from pathlib import Path
 from .blockchain.chain import Blockchain, make_genesis_block
 from .blockchain.difficulty import DynamicDifficultyPolicy, FixedDifficultyPolicy
 from .blockchain.mempool import Mempool
-from .blockchain.storage import WALStorage, InMemoryStorage
+from .blockchain.storage import WALStorage, InMemoryStorage, _WAL_FILENAME
 from .network.peers import TrustedPeers
 
 from .config import PERSONAL_KEY_FILE, DEFAULT_DIFFICULTY
@@ -29,9 +30,15 @@ async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--key_path", required=False, help="path to the key file (default = PERSONAL_KEY_FILE)", default=PERSONAL_KEY_FILE)
     parser.add_argument("--register_to_server", action="store_false", required=False, help="Whether or not to register to the server")
+    parser.add_argument("--start-fresh", action="store_true", required=False, help="Wheter or not to delete current chain storage")
     args = parser.parse_args()
 
     storage_path = Path("assignment_3")
+    if args.start_fresh:
+        path = Path(storage_path, _WAL_FILENAME)
+        print(f"Delete the current chain storage at: {path}")
+        os.remove(path)
+
     blockchain = Blockchain(make_genesis_block(DEFAULT_DIFFICULTY), storage=WALStorage(storage_path))
     mempool = Mempool(max_size=1000)
     trusted_peers = TrustedPeers()
@@ -53,7 +60,7 @@ async def main():
             "trusted_peers": trusted_peers,
             "difficulty_policy": difficulty_policy
         },
-        [],
+        [("started",)],
         False,
     )
 
