@@ -19,7 +19,7 @@ class _UnsupportedCurveFilter(logging.Filter):
         msg = record.getMessage()
         return "Curve" not in msg and "is not supported" not in msg
  
-logging.getLogger("RegisteringCommunity").addFilter(_UnsupportedCurveFilter())
+logging.getLogger("BlockchainCommunity").addFilter(_UnsupportedCurveFilter())
 logger = logging.getLogger(__name__)
 
 class BlockchainCommunity(Community):

@@ -28,6 +28,7 @@ logging.basicConfig(level=logging.DEBUG)
 async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--key_path", required=False, help="path to the key file (default = PERSONAL_KEY_FILE)", default=PERSONAL_KEY_FILE)
+    parser.add_argument("--register_to_server", action="store_false", required=False, help="Whether or not to register to the server")
     args = parser.parse_args()
 
     storage_path = Path("assignment_3")
@@ -42,7 +43,7 @@ async def main():
     builder.clear_overlays()
     builder.add_key("my peer", "curve25519", str(args.key_path))
     builder.add_overlay(
-        "RegisteringCommunity",
+        "BlockchainCommunity",
         "my peer",
         [WalkerDefinition(Strategy.RandomWalk, 20, {"timeout": 5.0})],
         default_bootstrap_defs,
@@ -55,13 +56,32 @@ async def main():
         [],
         False,
     )
- 
-    ipv8 = IPv8(
-        builder.finalize(),
-        extra_communities={
+
+    if args.register_to_server:
+        builder.add_overlay(
+            "RegisteringCommunity",
+            "my peer",
+            [WalkerDefinition(Strategy.RandomWalk, 20, {"timeout": 5.0})],
+            default_bootstrap_defs,
+            {
+                "chain": blockchain,
+                "mempool": mempool,
+                "trusted_peers": trusted_peers,
+                "difficulty_policy": difficulty_policy
+            },
+            [],
+            False,
+        )
+        extra_communities = {
             "BlockchainCommunity": BlockchainCommunity,
             "RegisteringCommunity": RegisteringCommunity
-        },
+        }
+    else:
+        extra_communities = {"BlockchainCommunity": BlockchainCommunity}
+        
+    ipv8 = IPv8(
+        builder.finalize(),
+        extra_communities=extra_communities,
     )
  
     # TODO mb choose 1 teammate to register, and the rest can just start blockchain community
