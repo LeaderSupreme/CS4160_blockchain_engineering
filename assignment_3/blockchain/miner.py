@@ -81,15 +81,17 @@ class Miner:
         while not self._stop_event.is_set():
             with self._tip_lock:
                 tip = self._tip
-            # interrupt is sticky (set on tip switch / found). Clear it before a fresh attempt,
-            # else every round bails immediately on the leftover signal and never mines.
-            self.interrupt.clear()
             self._mine_one_block(tip, worker_id)
 
     def _mine_one_block(self, tip: Block, worker_id: int) -> None:
         """Attempt to mine a block"""
         difficulty = self._difficulty_policy.get_difficulty(tip)
         pending = self._mempool.get_pending()
+
+        if len(pending) == 0:
+            logger.debug("No transactions, sleeping for a sec")
+            time.sleep(1)
+            return
 
         # Get all things needed to mine a new block with the pending transactions in the pool
         tx_hashes = [tx.tx_hash for tx in pending]
