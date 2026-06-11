@@ -1,9 +1,9 @@
 import asyncio
 import logging
 
-from payloads import RegisterBlockchain, RegisterResponse
+from .payloads import RegisterBlockchain, RegisterResponse
 
-from config import BLOCKCHAIN_COMMUNITY_ID, GROUP_ID, REGISTRATION_COMMUNITY_ID_B
+from .config import BLOCKCHAIN_COMMUNITY_ID, GROUP_ID, REGISTRATION_COMMUNITY_ID_B
 from ipv8.community import Community
 from ipv8.lazy_community import lazy_wrapper
 from ipv8.peer import Peer
@@ -89,5 +89,8 @@ class RegisteringCommunity(Community):
         print(f"Message: {payload.message}")
         print("==============================\n")
         self.logger.info(f"Registration reponse from server. Success: {payload.success}, msg: {payload.success}")
+
+        if payload.success:
+            await self.unload()
  
         # asyncio.get_event_loop().stop() # probably need to find a cleaner way to stop the execution
