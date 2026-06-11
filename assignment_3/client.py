@@ -5,6 +5,7 @@ from pathlib import Path
 from .blockchain.chain import Blockchain, make_genesis_block
 from .blockchain.difficulty import DynamicDifficultyPolicy, FixedDifficultyPolicy
 from .blockchain.mempool import Mempool
+from .blockchain.storage import WALStorage, InMemoryStorage
 from .network.peers import TrustedPeers
 
 from .config import PERSONAL_KEY_FILE, DEFAULT_DIFFICULTY
@@ -26,7 +27,8 @@ logging.basicConfig(level=logging.DEBUG)
 async def main():
     key_path = Path(PERSONAL_KEY_FILE)
 
-    blockchain = Blockchain(make_genesis_block(DEFAULT_DIFFICULTY))
+    storage_path = Path("assignment_3")
+    blockchain = Blockchain(make_genesis_block(DEFAULT_DIFFICULTY), storage=WALStorage(storage_path))
     mempool = Mempool(max_size=1000)
     trusted_peers = TrustedPeers()
     difficulty_policy = DynamicDifficultyPolicy(blockchain.get_block)

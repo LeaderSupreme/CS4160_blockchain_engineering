@@ -12,5 +12,7 @@ wheels/
 **/.env
 **/**.pem
 nonce.txt
+**.wal
+**.tmp
 
 /.vscode
