@@ -42,7 +42,7 @@ async def main():
 
     genisses = [make_genesis_block(DEFAULT_DIFFICULTY)]
     for i in range(1, 3):
-        genisses.append(make_genesis_block(DEFAULT_DIFFICULTY, prev_hash=genisses[i-1].block_hash))
+        genisses.append(make_genesis_block(DEFAULT_DIFFICULTY, prev_hash=genisses[i-1].block_hash, height=i))
     blockchain = Blockchain(genisses, storage=WALStorage(storage_path))
     mempool = Mempool(max_size=1000)
     trusted_peers = TrustedPeers()

@@ -94,7 +94,7 @@ class Miner:
         difficulty = self._difficulty_policy.get_difficulty(tip)
         pending = self._mempool.get_pending()
 
-        if len(pending) == 0 and tip.height > 2:
+        if len(pending) == 0 and tip.height >= 2:
             time.sleep(1)
             return
 

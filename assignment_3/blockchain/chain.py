@@ -143,7 +143,7 @@ class Block:
         )
 
 
-def make_genesis_block(difficulty: int = DEFAULT_DIFFICULTY, prev_hash = b"\x00" * 32) -> Block:
+def make_genesis_block(difficulty: int = DEFAULT_DIFFICULTY, prev_hash = b"\x00" * 32, height=0) -> Block:
     """The chain needs a genesis block. It needs to be identical on all nodes, so we hardcode it to make it easy.
 
     genesis block:
@@ -155,7 +155,7 @@ def make_genesis_block(difficulty: int = DEFAULT_DIFFICULTY, prev_hash = b"\x00"
       height     = 0              (it is the first block of the chain)
     """
     return Block(
-        height=0,
+        height=height,
         prev_hash=prev_hash,
         txs_hash=sha256(b""),
         timestamp=0,
