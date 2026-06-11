@@ -278,6 +278,10 @@ class Blockchain:
             logger.debug("Block height mismatch: parent at %d, block claims %d", parent.height, block.height)
             return AddResult()
 
+        # Remember the tip before we mutate anything, so we can tell a plain
+        # extend (tip moves forward by exactly this block) from a real reorg.
+        old_tip_hash = self.tip.block_hash
+
         # Store it and pull in any orphans that were waiting on it (recursively).
         self._store_and_cascade(block)
 
@@ -286,12 +290,16 @@ class Blockchain:
         # Longest-chain rule: only switch on a strictly taller branch (ties keep the current tip).
         best = max(self._blocks.values(), key=lambda b: b.height)
         if best.height > self.height:
-            result.reverted, result.applied = self._reorg(best)
             result.extended_tip = True
-
-        if block.height == self.height:
-            # We only persist the current chain
-            self._storage.append(block._encode())
+            if best.block_hash == block.block_hash and block.prev_hash == old_tip_hash:
+                # Fast path: this block directly extends the current tip, nothing cascaded
+                # in between. Just append it instead of rewriting the whole WAL.
+                self._chain[block.height] = block
+                result.applied = [block]
+                self._storage.append(block._encode())
+            else:
+                # Cascade extend or genuine reorg: rebuild the main path and rewrite the WAL.
+                result.reverted, result.applied = self._reorg(best)
 
         return result
 
