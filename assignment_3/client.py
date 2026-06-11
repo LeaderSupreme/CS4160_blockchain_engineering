@@ -28,9 +28,9 @@ logging.basicConfig(level=logging.DEBUG)
 
 async def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--key-path", required=False, help="path to the key file (default = PERSONAL_KEY_FILE)", default=PERSONAL_KEY_FILE)
+    parser.add_argument("--key_path", required=False, help="path to the key file (default = PERSONAL_KEY_FILE)", default=PERSONAL_KEY_FILE)
     parser.add_argument("--register", action="store_false", required=False, help="Whether or not to register to the server")
-    parser.add_argument("--start-fresh", action="store_true", required=False, help="Wheter or not to delete current chain storage")
+    parser.add_argument("--start_fresh", action="store_true", required=False, help="Wheter or not to delete current chain storage")
     args = parser.parse_args()
 
     storage_path = Path("assignment_3")
@@ -64,7 +64,7 @@ async def main():
         False,
     )
 
-    if not args.register_to_server:
+    if not args.register:
         builder.add_overlay(
             "RegisteringCommunity",
             "my peer",
