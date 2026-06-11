@@ -52,10 +52,10 @@ class BlockchainCommunity(Community):
         self.add_message_handler(BlockResponseInner, self.on_block_response_internal)
 
     def started(self) -> None:
-        # TODO start miner
         # TODO should we schedule task to sync with peers? or do we trust we dont go out of sync?
+        # Capture the running loop here (main thread). Miner threads can't get it themselves.
+        self._loop = asyncio.get_running_loop()
         self._miner.start(self._chain.tip)
-        pass
  
 
     def peer_added(self, peer: Peer) -> None:
@@ -300,8 +300,7 @@ class BlockchainCommunity(Community):
     # --------------------------------------
     def _on_block_mined_thread_safe(self, block: Block) -> None:
         """Called from the mining thread, when a block is mined. schedule the result in the event loop to make it thread safe."""
-        loop = asyncio.get_event_loop()
-        loop.call_soon_threadsafe(self._on_block_mined, block)
+        self._loop.call_soon_threadsafe(self._on_block_mined, block)
     
     def _on_block_mined(self, block: Block) -> None:
         """Callback method that handles the actual logic of a mined block"""

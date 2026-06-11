@@ -68,6 +68,8 @@ class Miner:
         assert tip is not None, "passed None to mine function"
         with self._tip_lock:
             self._tip = tip
+        with self._found_lock:
+            self._found = False
         self.interrupt.set()
         logger.info(f"Starting to mine at tip: {tip}")
 
@@ -79,6 +81,9 @@ class Miner:
         while not self._stop_event.is_set():
             with self._tip_lock:
                 tip = self._tip
+            # interrupt is sticky (set on tip switch / found). Clear it before a fresh attempt,
+            # else every round bails immediately on the leftover signal and never mines.
+            self.interrupt.clear()
             self._mine_one_block(tip, worker_id)
 
     def _mine_one_block(self, tip: Block, worker_id: int) -> None:
