@@ -28,6 +28,7 @@ class Miner:
 
         self._tip: Block
         self._tip_lock = threading.Lock()
+        self._tip_generation = 0
 
         self._num_threads = num_threads
         self._workers = []
@@ -37,14 +38,15 @@ class Miner:
     def start(self, tip = None) -> None:
         """Start the mining process, or continue if already started"""
         logger.debug("Miner start called")
-        if self._thread and self._thread.is_alive():
+        if any(thread.is_alive() for thread in self._workers):
             return
 
         self._stop_event.clear()
+        self.interrupt.clear()
         self._found = False
         self._workers = []
-        if tip is not None:
-            self._tip = tip
+        self._tip = tip
+        self._tip_generation = 0
 
         for i in range(self._num_threads):
             thread = threading.Thread(target=self._mine_loop, args=(i,), name=f"miner-{i}", daemon=True)
@@ -69,6 +71,7 @@ class Miner:
         assert tip is not None, "passed None to mine function"
         with self._tip_lock:
             self._tip = tip
+            self._tip_generation += 1
         with self._found_lock:
             self._found = False
         self.interrupt.set()
@@ -82,18 +85,14 @@ class Miner:
         while not self._stop_event.is_set():
             with self._tip_lock:
                 tip = self._tip
+                generation = self._tip_generation
             self.interrupt.clear()
-            self._mine_one_block(tip, worker_id)
+            self._mine_one_block(tip, worker_id, generation)
 
-    def _mine_one_block(self, tip: Block, worker_id: int) -> None:
+    def _mine_one_block(self, tip: Block, worker_id: int, generation: int) -> None:
         """Attempt to mine a block"""
         difficulty = self._difficulty_policy.get_difficulty(tip)
         pending = self._mempool.get_pending()
-
-        if len(pending) == 0:
-            logger.debug("No transactions, sleeping for a sec")
-            time.sleep(1)
-            return
 
         # Get all things needed to mine a new block with the pending transactions in the pool
         tx_hashes = [tx.tx_hash for tx in pending]
@@ -131,6 +130,10 @@ class Miner:
                 return
 
             nonce += check_interval * self._num_threads 
+            with self._tip_lock:
+                if generation != self._tip_generation:
+                    logger.debug("Mining interrupted by newer tip")
+                    return
             if self.interrupt.is_set():
                 logger.debug("Mining interrupted")
                 return

@@ -55,19 +55,13 @@ class BlockchainCommunity(Community):
         self.add_message_handler(RequestBlock, self.on_request_block)
         self.add_message_handler(BlockResponseInner, self.on_block_response_internal)
 
-        # Orphans
-        # TODO Refactor, this logic belongs in chain.py under Blockhain
-        # These are blocks that are correct, but unconnected for now.
-        # for example, a peer is ahead 2 blocks, and announes a new block.
-        # this block is correct, but we cant connect it to the chain yet.
-        self._orphans: dict[int, Block] = {}  # dict [height -> block]
         self._seen_tx_hashes: set[bytes] = set()
         self._chain_sync_request_id = 0
         self._sync_targets: dict[bytes, int] = {}
         self._loop: asyncio.AbstractEventLoop | None = None
 
-    
     def started(self) -> None:
+        # Capture the running loop here (main thread). Miner threads can't get it themselves.
         self._loop = asyncio.get_running_loop()
         self._miner.start(self._chain.tip)
         self.register_task(
@@ -81,8 +75,11 @@ class BlockchainCommunity(Community):
     def peer_added(self, peer: Peer) -> None:
         if self._trusted_peers.is_server(peer):
             logger.info("Found the server")
-        elif self._trusted_peers.is_teammate(peer):
-            logger.info(f"Found a teammate, mid: {peer.mid}")
+        elif self._is_sync_peer(peer):
+            if self._trusted_peers.is_teammate(peer):
+                logger.info(f"Found a teammate, mid: {peer.mid}")
+            else:
+                logger.info(f"Found a non-server blockchain peer, mid: {peer.mid}")
             self._request_chain_height(peer)
             self._share_mempool_with(peer)
         else:
@@ -113,7 +110,7 @@ class BlockchainCommunity(Community):
         logger.info(f"Peer: {peer}, submitted transaction: {payload}")
 
         tx_hash = self._transaction_hash_from_payload(payload)
-        tx = self._transaction_from_payload(payload, f"Submittransaction from peer: {peer}")
+        tx = self._transaction_from_payload(payload, f"Submit transaction from peer: {peer}")
         if tx is None:
             self.logger.warning(f"Submittransaction from peer: {peer}, had invalid signature")
             self.ez_send(
@@ -199,6 +196,11 @@ class BlockchainCommunity(Community):
         self._miner.mine(self._chain.tip)
         return True, True
 
+    @staticmethod
+    def _transaction_has_body(tx: Transaction) -> bool:
+        """Header-sync placeholders only carry tx_hash; mempool txs carry sender/signature."""
+        return bool(tx.sender_key) and bool(tx.signature)
+
     def _broadcast_transaction(self, tx: Transaction, exclude_peer: Peer | None = None) -> None:
         """Share a transaction with all teammate peers except the optional sender."""
         payload = MempoolTransaction(
@@ -236,8 +238,8 @@ class BlockchainCommunity(Community):
     @lazy_wrapper(MempoolTransaction)
     def on_mempool_transaction(self, peer: Peer, payload: MempoolTransaction) -> None:
         """Accept a pending transaction gossiped by a teammate and relay it once."""
-        if not self._trusted_peers.is_teammate(peer):
-            logger.debug(f"Ignoring mempool transaction from non-teammate peer: {peer}")
+        if not self._is_sync_peer(peer):
+            logger.debug(f"Ignoring mempool transaction from non-sync peer: {peer}")
             return
 
         tx = self._transaction_from_payload(payload, f"Mempool transaction from peer: {peer}")
@@ -252,16 +254,27 @@ class BlockchainCommunity(Community):
             return
 
         if added and not was_known:
-            logger.info(f"Accepted gossiped transaction {tx} from peer {peer}, new height: {self._chain.height}")
+            logger.info(f"Accepted gossiped transaction {tx} from peer {peer}")
             self._broadcast_transaction(tx, exclude_peer=peer)
 
 
     # --------------------------------------
     # Chain sync
     # --------------------------------------
+    def _is_sync_peer(self, peer: Peer) -> bool:
+        """Peers in this blockchain community, except the grading server, can help sync."""
+        return not self._trusted_peers.is_server(peer)
+
     def _teammate_peers(self) -> list[Peer]:
-        """Return peers that belong to our blockchain team."""
-        return [peer for peer in self.get_peers() if self._trusted_peers.is_teammate(peer)]
+        """Return peers that can participate in internal block and mempool sync."""
+        peers = [peer for peer in self.get_peers() if self._is_sync_peer(peer)]
+        trusted_count = sum(1 for peer in peers if self._trusted_peers.is_teammate(peer))
+        if peers and trusted_count != len(peers):
+            logger.debug(
+                f"Using {len(peers)} non-server sync peer(s); "
+                f"{trusted_count} matched configured teammate key(s)."
+            )
+        return peers
 
     def _sync_chains(self) -> None:
         """Periodically ask teammates for their chain height."""
@@ -297,8 +310,8 @@ class BlockchainCommunity(Community):
     @lazy_wrapper(ChainHeightResponse)
     def on_chain_height_response(self, peer: Peer, payload: ChainHeightResponse) -> None:
         """Handle a teammate's response to our periodic height request."""
-        if not self._trusted_peers.is_teammate(peer):
-            logger.debug(f"Ignoring chain height response from non-teammate peer: {peer}")
+        if not self._is_sync_peer(peer):
+            logger.debug(f"Ignoring chain height response from non-sync peer: {peer}")
             return
 
         if payload.height > self._chain.height:
@@ -339,6 +352,8 @@ class BlockchainCommunity(Community):
                 tip_hash=current_tip.block_hash
             )
         )
+        if self._is_sync_peer(peer):
+            self._share_mempool_with(peer)
 
 
     @lazy_wrapper(GetBlock)
@@ -389,12 +404,13 @@ class BlockchainCommunity(Community):
 
     @lazy_wrapper(RequestBlock)
     def on_request_block(self, peer: Peer, payload: RequestBlock) -> None:
-        """Handle an internal request for a block from a teammate."""
+        """Handle an internal block request from a teammate. Same lookup as on_get_block, but we
+        reply with BlockResponseInner so the requester's on_block_response_internal handler fires."""
         block = self._chain.get_block(payload.height)
         if not block:
             self.logger.warning(f"Couldnt find a block a requested height: {payload.height}")
             return  # TODO no way to send failure right? mb other peers will have this height already
-        
+
         tx_hashes = b"".join([transaction.tx_hash for transaction in block.transactions])
         self.ez_send(
             peer,
@@ -421,9 +437,15 @@ class BlockchainCommunity(Community):
             return None
 
         tx_hashes = [payload.tx_hashes[i:i+32] for i in range(0, len(payload.tx_hashes), 32)]
+
         txs_hash_check = crypto.compute_txs_hash(tx_hashes)
         if txs_hash_check != payload.txs_hash:
             logger.warning("Internal block response: txs_hash mismatch, rejecting block")
+            return None
+
+        header_hash_check = crypto.hash_header(payload.prev_hash, payload.txs_hash, payload.timestamp, payload.difficulty, payload.nonce)
+        if header_hash_check != payload.block_hash:
+            logger.warning("Internal block response: blockhash didnt match header hash, rejecting block")
             return None
 
         transactions = tuple(
@@ -449,62 +471,53 @@ class BlockchainCommunity(Community):
 
     @lazy_wrapper(BlockResponseInner)
     def on_block_response_internal(self, peer: Peer, payload: BlockResponseInner) -> None:
-        """Handle Block reponse inner. We verify the block, and possible add it to our chain."""
-        if not self._trusted_peers.is_teammate(peer):
-            logger.debug(f"Ignoring internal block response from non-teammate peer: {peer}")
+        """Handle Block response inner. We verify the block, and possibly add it to our chain."""
+        if not self._is_sync_peer(peer):
+            logger.debug(f"Ignoring internal block response from non-sync peer: {peer}")
             return
 
         block = self._block_from_internal_response(payload)
         if block is None:
             return
 
-        if self._chain.contains(block.block_hash):
-            logger.debug(f"Internal block response: already have block {block}, ignoring")
+        result = self._chain.add_block(block)
+
+        if result.is_orphan:
+            # Parent unknown: the chain has parked this block. Ask for the previous height so we
+            # can backfill towards a block we already have. (height-based backfill for now.)
+            logger.info(f"Internal block response from peer {peer}: parked orphan at height {block.height}, "
+                        f"requesting parent at height {block.height - 1}")
+            self.ez_send(peer, RequestBlock(block.height - 1))
+            return
+
+        if result.added:
+            self.logger.debug(f"Internal block response from peer {peer}: added block (extended_tip={result.extended_tip})")
+            self._reconcile_after_chain_update(result)
             self._request_next_missing_block(peer)
             return
 
-        if self._chain.add_block(block):
-            self.logger.debug(f"Internal block response. Added block from peer {peer} to chain")
-            adopted = self.adopt_orphans()
-            logger.info(f"Internal block response: was able to adopt {len(adopted)} orphans after this addition")
-
-            # Update the mining process to the new tip
-            included_hashes = block.tx_hashes + [tx_hash for orphan in adopted for tx_hash in orphan.tx_hashes]
-            self._seen_tx_hashes.update(included_hashes)
-            self._mempool.remove_included(included_hashes)
-            self._miner.mine(self._chain.tip)
+        if self._chain.knows(block.block_hash):
             self._request_next_missing_block(peer)
 
-            return
-        
-        if block.height >= self._chain.height + 1:
-            self._orphans[block.height] = block
-            logger.info(f"Internal block response: from peer: {peer} was valid, but were unable to add to chain. incorrect height. "
-                        f"our height: {self._chain.height}, block height: {block.height}. requesting previous block and added to orphans")
-            self.ez_send(peer, RequestBlock(block.height-1))
-            return
+    def _reconcile_after_chain_update(self, result) -> None:
+        """After a block was added, keep the mempool and miner consistent with the new best chain."""
+        if not result.extended_tip:
+            return  # block landed on a side branch; main chain unchanged
 
-        logger.debug(
-            f"Internal block response: received stale or forked block at height {block.height}; "
-            f"local height is {self._chain.height}, current txs in mempool: {len(self._mempool)}"
-        )
+        # Transactions that left the main chain in a reorg go back to the mempool...
+        for block in result.reverted:
+            for tx in block.transactions:
+                if self._transaction_has_body(tx):
+                    self._mempool.add(tx)
+        # ...and transactions now confirmed on the main chain are removed.
+        for block in result.applied:
+            self._seen_tx_hashes.update(block.tx_hashes)
+            self._mempool.remove_included(block.tx_hashes)
+
+        # Mine from the new tip.
+        self._miner.mine(self._chain.tip)
 
 
-    def adopt_orphans(self) -> list[Block]:
-        """Try to adopt orphans from the current pool"""
-        adopted = []
-        while True:
-            orphan = self._orphans.pop(self._chain.height + 1, None)
-            if not orphan:
-                break
-
-            if not self._chain.add_block(orphan):
-                break
-
-            adopted.append(orphan)
-        return adopted
-
-    
     def _announce_block(self, block: Block) -> None:
         """Broadcast the block to all known peers"""
         payload = AnnounceBlock(block.height, block.block_hash)
@@ -517,25 +530,21 @@ class BlockchainCommunity(Community):
     # --------------------------------------
     def _on_block_mined_thread_safe(self, block: Block) -> None:
         """Called from the mining thread, when a block is mined. schedule the result in the event loop to make it thread safe."""
-        if self._loop is None:
-            logger.warning("Mined block before community event loop was ready, dropping block")
-            return
-
         self._loop.call_soon_threadsafe(self._on_block_mined, block)
     
     def _on_block_mined(self, block: Block) -> None:
         """Callback method that handles the actual logic of a mined block"""
-        if not self._chain.add_block(block):
-            self.logger.warning(f"Mined block was rejected form the chain. block: {block}")  # could be that during mining, we got a new tip
-            self._miner.mine(self._chain.tip)                                                # start mining a new block, from the new tip
+        result = self._chain.add_block(block)
+        if not result.added:
+            # Could be that during mining we already got this tip from a peer, or the tip moved on.
+            self.logger.warning(f"Mined block was rejected from the chain. block: {block}")
+            self._miner.mine(self._chain.tip)  # start mining a new block, from the current tip
             return
-        
-        # The block was successfully added to the chain. 
-        # - remove the transactions included from the mempool
+
+        # The block was successfully added.
+        # - reconcile the mempool against the (possibly reorged) main chain
         # - announce the block to all peers
-        # - start mining form the new block
+        # - keep mining from the current tip
         logger.info(f"Block added to chain: {block}")
-        self._seen_tx_hashes.update(block.tx_hashes)
-        self._mempool.remove_included(block.tx_hashes)
+        self._reconcile_after_chain_update(result)
         self._announce_block(block)
-        self._miner.mine(self._chain.tip)
