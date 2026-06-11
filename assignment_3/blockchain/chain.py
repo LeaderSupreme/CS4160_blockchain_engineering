@@ -208,7 +208,10 @@ class Blockchain:
     The orphan pool is bounded to avoid a memory-exhaustion DoS from bogus high-height blocks.
     """
 
-    def __init__(self, genesisses: list[Block], max_orphans: int = 1000, storage: BlockStorage | None = None) -> None:
+    def __init__(self, genesisses: list[Block] | Block, max_orphans: int = 1000, storage: BlockStorage | None = None) -> None:
+        # Accept either a single genesis block or a pre-seeded list of consecutive start blocks.
+        if isinstance(genesisses, Block):
+            genesisses = [genesisses]
         # parent_hash we are missing -> {block_hash -> block}
         self._orphans: dict[bytes, dict[bytes, Block]] = {}
         self._orphan_hashes: set[bytes] = set()
