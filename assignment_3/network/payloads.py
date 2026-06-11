@@ -5,7 +5,8 @@ from ipv8.messaging.lazy_payload import VariablePayload, vp_compile
 from ..config import (
     MSG_BLOCK_RESPONSE_INNER, MSG_REGISTER_BLOCKCHAIN, MSG_REGISTER_RESPONSE, MSG_REQUEST_BLOCK, 
     MSG_SUBMIT_TX, MSG_SUBMIT_TX_RESPONSE, MSG_GET_CHAIN_HEIGHT,
-    MSG_CHAIN_HEIGHT_RESPONSE, MSG_GET_BLOCK, MSG_BLOCK_RESPONSE, MSG_ANNOUNCE_BLOCK
+    MSG_CHAIN_HEIGHT_RESPONSE, MSG_GET_BLOCK, MSG_BLOCK_RESPONSE, MSG_ANNOUNCE_BLOCK,
+    MSG_MEMPOOL_TRANSACTION
 )
 
 # --------------------------------------
@@ -116,6 +117,18 @@ class AnnounceBlock(DataClassPayload[MSG_ANNOUNCE_BLOCK]):
 
     format_list = ["q", "varlenH"]
     names = ["height", "block_hash"]
+
+@vp_compile
+@dataclass
+class MempoolTransaction(DataClassPayload[MSG_MEMPOOL_TRANSACTION]):
+    """Share a pending transaction with teammates."""
+    sender_key: bytes
+    data: bytes
+    timestamp: int
+    signature: bytes
+
+    format_list = ["varlenH", "varlenH", "q", "varlenH"]
+    names = ["sender_key", "data", "timestamp", "signature"]
 
 @vp_compile
 @dataclass
