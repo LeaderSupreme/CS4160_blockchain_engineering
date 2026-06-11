@@ -1,10 +1,13 @@
+import os
 import logging
 import asyncio
+import argparse
 from pathlib import Path
 
 from .blockchain.chain import Blockchain, make_genesis_block
 from .blockchain.difficulty import DynamicDifficultyPolicy, FixedDifficultyPolicy
 from .blockchain.mempool import Mempool
+from .blockchain.storage import WALStorage, InMemoryStorage, _WAL_FILENAME
 from .network.peers import TrustedPeers
 
 from .config import PERSONAL_KEY_FILE, DEFAULT_DIFFICULTY
@@ -24,9 +27,19 @@ logging.getLogger("RegisteringCommunity").addFilter(_UnsupportedCurveFilter())
 logging.basicConfig(level=logging.DEBUG)
 
 async def main():
-    key_path = Path(PERSONAL_KEY_FILE)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--key_path", required=False, help="path to the key file (default = PERSONAL_KEY_FILE)", default=PERSONAL_KEY_FILE)
+    parser.add_argument("--register", action="store_false", required=False, help="Whether or not to register to the server")
+    parser.add_argument("--start_fresh", action="store_true", required=False, help="Wheter or not to delete current chain storage")
+    args = parser.parse_args()
 
-    blockchain = Blockchain(make_genesis_block(DEFAULT_DIFFICULTY))
+    storage_path = Path("assignment_3")
+    if args.start_fresh:
+        path = Path(storage_path, _WAL_FILENAME)
+        print(f"Delete the current chain storage at: {path}")
+        os.remove(path)
+
+    blockchain = Blockchain(make_genesis_block(DEFAULT_DIFFICULTY), storage=WALStorage(storage_path))
     mempool = Mempool(max_size=1000)
     trusted_peers = TrustedPeers()
     difficulty_policy = DynamicDifficultyPolicy(blockchain.get_block)
@@ -35,9 +48,9 @@ async def main():
     builder = ConfigBuilder()
     builder.clear_keys()
     builder.clear_overlays()
-    builder.add_key("my peer", "curve25519", str(key_path))
+    builder.add_key("my peer", "curve25519", str(args.key_path))
     builder.add_overlay(
-        "RegisteringCommunity",
+        "BlockchainCommunity",
         "my peer",
         [WalkerDefinition(Strategy.RandomWalk, 20, {"timeout": 5.0})],
         default_bootstrap_defs,
@@ -47,16 +60,35 @@ async def main():
             "trusted_peers": trusted_peers,
             "difficulty_policy": difficulty_policy
         },
-        [],
+        [("started",)],
         False,
     )
- 
-    ipv8 = IPv8(
-        builder.finalize(),
-        extra_communities={
+
+    if not args.register:
+        builder.add_overlay(
+            "RegisteringCommunity",
+            "my peer",
+            [WalkerDefinition(Strategy.RandomWalk, 20, {"timeout": 5.0})],
+            default_bootstrap_defs,
+            {
+                "chain": blockchain,
+                "mempool": mempool,
+                "trusted_peers": trusted_peers,
+                "difficulty_policy": difficulty_policy
+            },
+            [],
+            False,
+        )
+        extra_communities = {
             "BlockchainCommunity": BlockchainCommunity,
             "RegisteringCommunity": RegisteringCommunity
-        },
+        }
+    else:
+        extra_communities = {"BlockchainCommunity": BlockchainCommunity}
+        
+    ipv8 = IPv8(
+        builder.finalize(),
+        extra_communities=extra_communities,
     )
  
     # TODO mb choose 1 teammate to register, and the rest can just start blockchain community

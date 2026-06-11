@@ -89,7 +89,9 @@ class WALStorage(BlockStorage):
             logger.info("Loading WAL storage, but path did not exist. Returning empty list.")
             return []
 
-        return list(self._replay(self._wal_path))
+        loaded = list(self._replay(self._wal_path))
+        logger.debug(f"Loaded {len(loaded)} records from file")
+        return loaded
 
     def append(self, block: bytes) -> None:
         """Append a single block record to the WAL."""

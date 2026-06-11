@@ -19,7 +19,7 @@ class _UnsupportedCurveFilter(logging.Filter):
         msg = record.getMessage()
         return "Curve" not in msg and "is not supported" not in msg
  
-logging.getLogger("RegisteringCommunity").addFilter(_UnsupportedCurveFilter())
+logging.getLogger("BlockchainCommunity").addFilter(_UnsupportedCurveFilter())
 logger = logging.getLogger(__name__)
 
 class BlockchainCommunity(Community):
@@ -111,7 +111,7 @@ class BlockchainCommunity(Community):
             - Share the transaction with teammates
             - Respond
         """
-        logger.debug(f"Peer: {peer}, submitted transaction: {payload}")
+        logger.info(f"Peer: {peer}, submitted transaction: {payload}")
 
         tx_hash = self._transaction_hash_from_payload(payload)
         tx = self._transaction_from_payload(payload, f"Submittransaction from peer: {peer}")
@@ -331,7 +331,7 @@ class BlockchainCommunity(Community):
     def on_get_chain_height(self, peer: Peer, payload: GetChainHeight) -> None:
         """Handle a request for the current chain height"""
         current_tip = self._chain.tip
-        self.logger.debug(f"Handeling get chain height request from peer: {peer}. Current tip: {current_tip}")
+        self.logger.debug(f"Handeling get chain height request from peer: {peer}. Current tip: {current_tip}. Current height: {current_tip.height}")
         self.ez_send(
             peer,
             ChainHeightResponse(
@@ -410,7 +410,7 @@ class BlockchainCommunity(Community):
                 tx_hashes=tx_hashes
             )
         )
-        self.logger.debug(f"Successfully returned requested block at height: {payload.height} to peer: {peer}")
+        self.logger.info(f"Successfully returned requested block at height: {payload.height} to peer: {peer}")
 
     def _block_from_internal_response(self, payload: BlockResponseInner) -> Block | None:
         """Decode and validate a block received from a teammate."""
