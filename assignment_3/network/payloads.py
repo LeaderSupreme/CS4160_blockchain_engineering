@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from ipv8.messaging.payload_dataclass import DataClassPayload
 from ipv8.messaging.lazy_payload import VariablePayload, vp_compile
 
-from .config import (
+from ..config import (
     MSG_BLOCK_RESPONSE_INNER, MSG_REGISTER_BLOCKCHAIN, MSG_REGISTER_RESPONSE, MSG_REQUEST_BLOCK, 
     MSG_SUBMIT_TX, MSG_SUBMIT_TX_RESPONSE, MSG_GET_CHAIN_HEIGHT,
     MSG_CHAIN_HEIGHT_RESPONSE, MSG_GET_BLOCK, MSG_BLOCK_RESPONSE, MSG_ANNOUNCE_BLOCK

@@ -3,7 +3,7 @@ import time
 from typing import Callable
 
 from .chain import Block
-from .config import (
+from ..config import (
     DEFAULT_DIFFICULTY,
     MAX_DIFFICULTY,
     MIN_DIFFICULTY,

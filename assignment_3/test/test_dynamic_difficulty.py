@@ -4,7 +4,7 @@ import pytest
 from types import SimpleNamespace
 
 from assignment_3.config import DEFAULT_DIFFICULTY, MAX_DIFFICULTY, MIN_DIFFICULTY, TARGET_BLOCK_TIME_S, EMA_WINDOW, FUTURE_DRIFT_S, MAX_ADJUSTMENT
-from assignment_3.difficulty import DynamicDifficultyPolicy
+from assignment_3.blockchain.difficulty import DynamicDifficultyPolicy
 
 def make_chain(
     num_blocks: int,

@@ -2,8 +2,8 @@ import pytest
 import tempfile
 from pathlib import Path
 
-from assignment_3.storage import InMemoryStorage, WALStorage, _WAL_FILENAME, _LEN_STRUCT
-from assignment_3.chain import Block 
+from assignment_3.blockchain.storage import InMemoryStorage, WALStorage, _WAL_FILENAME, _LEN_STRUCT
+from assignment_3.blockchain.chain import Block 
 
 def make_block(height: int, prev_hash: bytes = b"0") -> Block:
     return Block(
