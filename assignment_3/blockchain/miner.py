@@ -94,6 +94,10 @@ class Miner:
         difficulty = self._difficulty_policy.get_difficulty(tip)
         pending = self._mempool.get_pending()
 
+        if len(pending) == 0 and tip.height > 2:
+            time.sleep(1)
+            return
+
         # Get all things needed to mine a new block with the pending transactions in the pool
         tx_hashes = [tx.tx_hash for tx in pending]
         txs_hash = crypto.compute_txs_hash(tx_hashes)
