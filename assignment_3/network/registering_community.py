@@ -24,12 +24,17 @@ class RegisteringCommunity(Community):
     To try again, we need to register again.
     """
     community_id = REGISTRATION_COMMUNITY_ID_B
- 
+
+    # Longer than the server's ~5-minute attempt window, so a re-registration never cuts a
+    # still-running verification attempt short (re-registering resets the attempt batch).
+    RE_REGISTER_INTERVAL_S = 420.0
+
     def __init__(self, settings):
         super().__init__(settings)
         self._trusted_peers = settings.trusted_peers
         self.server_peer = None
         self.submitted = False
+        self.passed = False
 
         self.add_message_handler(RegisterResponse, self.on_response)
         self.register_task("status", self._log_status, interval=10.0, delay=10.0)
@@ -81,16 +86,25 @@ class RegisteringCommunity(Community):
         if not self._trusted_peers.is_server(peer):
             logger.debug(f"Ignoring registration response from non-server peer. payload: {payload}")
             return
- 
-        print("\n==============================")
-        print("SERVER RESPONSE")
-        print("==============================")
-        print(f"Success: {payload.success}")
-        print(f"Message: {payload.message}")
-        print("==============================\n")
-        self.logger.info(f"Registration reponse from server. Success: {payload.success}, msg: {payload.success}")
 
-        if payload.success:
-            await self.unload()
- 
-        # asyncio.get_event_loop().stop() # probably need to find a cleaner way to stop the execution
+        print(f"[Register] Done — success={payload.success} message={payload.message}")
+        self.logger.info(f"Registration response from server. success={payload.success}, message={payload.message}")
+
+        if "already passed" in payload.message.lower():
+            # The pass is recorded server-side (sticky). Nothing left to do.
+            self.passed = True
+            self.cancel_pending_task("re_register")
+            return
+
+        # Registered, verification attempts are (re)starting.
+        # Re-register after the attempt window has fully elapsed.
+        self.replace_task("re_register", self._re_register, delay=self.RE_REGISTER_INTERVAL_S)
+
+    def _re_register(self):
+        """Allow a fresh RegisterBlockchain to find out whether the group passed (or retry)."""
+        if self.passed:
+            return
+
+        self.submitted = False
+        if self.server_peer is not None:
+            asyncio.ensure_future(self.submit())

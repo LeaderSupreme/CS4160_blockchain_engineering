@@ -490,13 +490,11 @@ class BlockchainCommunity(Community):
             self.ez_send(peer, RequestBlock(block.height - 1))
             return
 
-        if result.added:
-            self.logger.debug(f"Internal block response from peer {peer}: added block (extended_tip={result.extended_tip})")
+        if result.extended_tip:
+            self.logger.debug(f"Internal block response from peer {peer}: tip changed (added={result.added})")
             self._reconcile_after_chain_update(result)
-            self._request_next_missing_block(peer)
-            return
 
-        if self._chain.knows(block.block_hash):
+        if result.added or self._chain.knows(block.block_hash):
             self._request_next_missing_block(peer)
 
     def _reconcile_after_chain_update(self, result) -> None:
@@ -519,9 +517,9 @@ class BlockchainCommunity(Community):
 
 
     def _announce_block(self, block: Block) -> None:
-        """Broadcast the block to all known peers"""
+        """Broadcast the block to all sync peers (the server never needs our internal messages)"""
         payload = AnnounceBlock(block.height, block.block_hash)
-        for peer in self.get_peers():
+        for peer in self._teammate_peers():
             self.ez_send(peer, payload)
                 
             
@@ -547,4 +545,9 @@ class BlockchainCommunity(Community):
         # - keep mining from the current tip
         logger.info(f"Block added to chain: {block}")
         self._reconcile_after_chain_update(result)
+        if not result.extended_tip:
+            # Our block landed on a side branch (an equal-height peer block won the tie-break),
+            # so reconcile skipped the miner restart. Restart here, otherwise every worker
+            # stays paused and this node stops mining for good.
+            self._miner.mine(self._chain.tip)
         self._announce_block(block)

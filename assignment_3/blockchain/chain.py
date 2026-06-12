@@ -1,10 +1,11 @@
 import msgpack
 import logging
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 from .storage import BlockStorage, InMemoryStorage
 from ..config import DEFAULT_DIFFICULTY
-from .crypto import compute_txs_hash, hash_header, satisfies_pow, sha256
+from .crypto import compute_txs_hash, hash_header, mine_block, satisfies_pow, sha256
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +144,7 @@ class Block:
         )
 
 
+@lru_cache(maxsize=None)
 def make_genesis_block(difficulty: int = DEFAULT_DIFFICULTY, prev_hash = b"\x00" * 32, height=0) -> Block:
     """The chain needs a genesis block. It needs to be identical on all nodes, so we hardcode it to make it easy.
 
@@ -151,17 +153,19 @@ def make_genesis_block(difficulty: int = DEFAULT_DIFFICULTY, prev_hash = b"\x00"
       txs_hash   = SHA256(b"")    (doesnt have any transactions)
       timestamp  = 0              (doesnt have normal timestamp)
       difficulty = DIFFICULTY
-      nonce      = 0              (doesnt have a nonce, it doesnt need pow, as it won't be need to be mined)
+      nonce      = first nonce (from 0) whose hash satisfies the PoW
       height     = 0              (it is the first block of the chain)
     """
+    txs_hash = sha256(b"")
+    nonce, block_hash = mine_block(prev_hash, txs_hash, 0, difficulty)
     return Block(
         height=height,
         prev_hash=prev_hash,
-        txs_hash=sha256(b""),
+        txs_hash=txs_hash,
         timestamp=0,
         difficulty=difficulty,
-        nonce=0,
-        block_hash=hash_header(prev_hash, sha256(b""), 0, difficulty, 0),
+        nonce=nonce,
+        block_hash=block_hash,
         transactions=(),
     )
 
@@ -190,6 +194,14 @@ class AddResult:
     def __bool__(self) -> bool:
         # Keeps `if chain.add_block(b):` / `assert chain.add_block(b)` reading as "was it added".
         return self.added
+
+
+def _chain_score(block: "Block") -> tuple[int, bytes]:
+    """Deterministic best-chain ordering key: taller wins, and on a height tie the smaller
+    block hash wins. The hash is inverted so plain `max()`/`>` prefer the smaller hash. Because
+    every node applies the same rule, equal-height forks converge on the same tip."""
+    inverted_hash = bytes(255 - b for b in block.block_hash)
+    return (block.height, inverted_hash)
 
 
 # --------------------------------------
@@ -270,8 +282,10 @@ class Blockchain:
             return AddResult()
 
         if self.knows(block.block_hash):
-            logger.debug("Block already known, ignoring %s", block)
-            return AddResult()
+            # Already have it, but a sibling branch we hold may now out-score our tip
+            # Re-run selection so nodes converge deterministically regardless of the order blocks arrived in.
+            logger.debug("Block already known, re-evaluating best tip %s", block)
+            return self._select_best_tip()
 
         parent = self._blocks.get(block.prev_hash)
         if parent is None:
@@ -283,29 +297,28 @@ class Blockchain:
             logger.debug("Block height mismatch: parent at %d, block claims %d", parent.height, block.height)
             return AddResult()
 
-        # Remember the tip before we mutate anything, so we can tell a plain
-        # extend (tip moves forward by exactly this block) from a real reorg.
-        old_tip_hash = self.tip.block_hash
-
         # Store it and pull in any orphans that were waiting on it (recursively).
         self._store_and_cascade(block)
 
-        result = AddResult(added=True)
+        result = self._select_best_tip()
+        result.added = True
+        return result
 
-        # Longest-chain rule: only switch on a strictly taller branch (ties keep the current tip).
-        best = max(self._blocks.values(), key=lambda b: b.height)
-        if best.height > self.height:
+    def _select_best_tip(self) -> AddResult:
+        """Pick the best tip among all connected blocks and reorg
+        the main chain onto it if it out-scores the current tip. """
+        result = AddResult()
+        best = max(self._blocks.values(), key=_chain_score)
+        if _chain_score(best) > _chain_score(self.tip):
             result.extended_tip = True
-            if best.block_hash == block.block_hash and block.prev_hash == old_tip_hash:
-                # Fast path: this block directly extends the current tip, nothing cascaded
-                # in between. Just append it instead of rewriting the whole WAL.
-                self._chain[block.height] = block
-                result.applied = [block]
-                self._storage.append(block._encode())
+            if best.prev_hash == self.tip.block_hash and best.height == self.height + 1:
+                # Fast path: best directly extends the current tip -> append, no full rewrite.
+                self._chain[best.height] = best
+                result.applied = [best]
+                self._storage.append(best._encode())
             else:
-                # Cascade extend or genuine reorg: rebuild the main path and rewrite the WAL.
+                # Genuine reorg / tie-break switch: rebuild the main path and rewrite the WAL.
                 result.reverted, result.applied = self._reorg(best)
-
         return result
 
     # --------------------------------------
