@@ -173,17 +173,20 @@ def test_fork_switch_longer_chain_wins():
     f2 = make_valid_block(fork_chain, ts=b1.timestamp + 2000)
     fork_chain.add_block(f2)
 
-    # f1 only ties our height (1) -> stored as a side branch, no reorg
+    # f1 ties our height (1): deterministic tie-break -> the smaller block hash wins
     r1 = chain.add_block(f1)
-    assert r1.added and not r1.extended_tip
-    assert chain.tip == b1
+    assert r1.added
+    winner = min(b1, f1, key=lambda b: b.block_hash)
+    assert chain.tip == winner
+    assert r1.extended_tip == (winner is f1)
 
-    # f2 makes the fork height 2 > our 1 -> reorg onto it, b1 is reverted
+    # f2 makes the fork height 2 > our 1 -> reorg onto it
     r2 = chain.add_block(f2)
     assert r2.added and r2.extended_tip
     assert chain.height == 2
     assert chain.tip == f2
-    assert b1 in r2.reverted
+    # b1 is no longer on the main chain (f1/f2 branch took over)
+    assert chain.get_block(1) == f1
 
 def test_fork_switch_shorter_chain_ignored():
     """A competing branch shorter than the current chain must not take over"""

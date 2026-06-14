@@ -5,7 +5,7 @@ import argparse
 from pathlib import Path
 
 from .blockchain.chain import Blockchain, make_genesis_block
-from .blockchain.difficulty import DynamicDifficultyPolicy, FixedDifficultyPolicy
+from .blockchain.difficulty import FixedDifficultyPolicy
 from .blockchain.mempool import Mempool
 from .blockchain.storage import WALStorage, InMemoryStorage, _WAL_FILENAME
 from .network.peers import TrustedPeers
@@ -24,7 +24,7 @@ class _UnsupportedCurveFilter(logging.Filter):
         return "Curve" not in msg and "is not supported" not in msg
  
 logging.getLogger("RegisteringCommunity").addFilter(_UnsupportedCurveFilter())
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 async def main():
     parser = argparse.ArgumentParser()
@@ -33,16 +33,22 @@ async def main():
     parser.add_argument("--start_fresh", action="store_true", required=False, help="Wheter or not to delete current chain storage")
     args = parser.parse_args()
 
-    storage_path = Path("assignment_3")
+    # Per-key storage dir so multiple nodes on one machine don't share (clobber) a WAL.
+    storage_path = Path("assignment_3", "wal", Path(args.key_path).stem)
     if args.start_fresh:
         path = Path(storage_path, _WAL_FILENAME)
-        print(f"Delete the current chain storage at: {path}")
-        os.remove(path)
+        if os.path.exists(path):
+            print(f"Delete the current chain storage at: {path}")
+            os.remove(path)
 
+    # Single genesis only. Heights 1+ must be mined (real PoW) — seeding unmined blocks makes them fail
     blockchain = Blockchain(make_genesis_block(DEFAULT_DIFFICULTY), storage=WALStorage(storage_path))
     mempool = Mempool(max_size=1000)
     trusted_peers = TrustedPeers()
-    difficulty_policy = DynamicDifficultyPolicy(blockchain.get_block)
+    # Fixed difficulty: DynamicDifficultyPolicy scales the *bit count* multiplicatively, but work
+    # is exponential in bits (20 -> 30 bits = 1024x the hashes). A few fast blocks push it to a
+    # difficulty no machine can mine, the tip freezes, and the EMA never updates again.
+    difficulty_policy = FixedDifficultyPolicy(DEFAULT_DIFFICULTY)
      
  
     builder = ConfigBuilder()
