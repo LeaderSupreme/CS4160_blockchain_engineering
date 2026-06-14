@@ -10,7 +10,7 @@ from .blockchain.mempool import Mempool
 from .blockchain.storage import WALStorage, InMemoryStorage, _WAL_FILENAME
 from .network.peers import TrustedPeers
 
-from .config import PERSONAL_KEY_FILE, DEFAULT_DIFFICULTY, MINING_DIFFICULTY
+from .config import PERSONAL_KEY_FILE, DEFAULT_DIFFICULTY
 from .network.blockchain_community import BlockchainCommunity
 from .network.registering_community import RegisteringCommunity
  
@@ -48,7 +48,7 @@ async def main():
     # Fixed difficulty: DynamicDifficultyPolicy scales the *bit count* multiplicatively, but work
     # is exponential in bits (20 -> 30 bits = 1024x the hashes). A few fast blocks push it to a
     # difficulty no machine can mine, the tip freezes, and the EMA never updates again.
-    difficulty_policy = FixedDifficultyPolicy(MINING_DIFFICULTY)
+    difficulty_policy = FixedDifficultyPolicy(DEFAULT_DIFFICULTY)
      
  
     builder = ConfigBuilder()
