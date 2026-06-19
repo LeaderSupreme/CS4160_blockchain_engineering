@@ -10,7 +10,7 @@ Pure blockchain primitives with **no networking**. Everything here is unit-teste
 | `difficulty.py` | `DifficultyPolicy` protocol + `Fixed` / `Dynamic` implementations |
 | `mempool.py` | `Mempool` — pending transactions with priority eviction |
 | `miner.py` | `Miner` — thread-safe, multi-threaded nonce search |
-| `storage.py` | `BlockStorage` protocol + `InMemoryStorage` / `WALStorage` |
+| `storage.py` | `BlockStorage` protocol + `InMemoryStorage` / `IndexedStorage` |
 
 ## `crypto.py`
 
@@ -78,13 +78,47 @@ tip** over interleaved nonce ranges (`nonce = worker_id`, `step = num_threads`).
 
 ## `storage.py`
 
-`BlockStorage` protocol: `load()`, `append(block)`, `replace_all(blocks)`.
+`BlockStorage` protocol (the drop-in contract `Blockchain` depends on):
+`load()`, `append(block)`, `replace_all(blocks)`. Block bytes are opaque to storage.
 
-- `InMemoryStorage` — volatile list, no I/O (used in tests).
-- `WALStorage` — crash-safe **Write-Ahead Log**:
-  - each record is a 4-byte big-endian length prefix + block bytes, `flush`+`fsync`'d.
-  - `load()` replays the log and stops cleanly at the first truncated/corrupt record
-    (partial tail writes are discarded, not fatal).
-  - `replace_all` (fork switch) writes a temp file then atomically `os.replace`s it.
-  - auto-compacts to one record per height every `compact_every` (default 50) appends.
-  - only the **main chain** is stored — side forks are not persisted.
+- `InMemoryStorage` — volatile list, no I/O (default / tests).
+- `IndexedStorage` — crash-safe, O(1) reads, background compaction, pruning. Two files
+  live side by side in the per-node directory:
+
+  | File | Role |
+  |---|---|
+  | `chain.blocks` | append-only data file, the **single source of truth** |
+  | `chain.index`  | a **rebuildable** fixed-width height → location cache |
+
+  **`chain.blocks` layout** — 8-byte header `magic(4) + epoch(4)` (epoch is bumped on every
+  full rewrite), then records: `len(4) | flags(1) | block(len) | crc32(flags+block)(4)`.
+  The CRC detects a torn *or* bit-flipped record; `flags` marks a header-only (pruned)
+  record.
+
+  **`chain.index` layout** — header `magic(4) + epoch(4) + data_valid_size(8) + count(4)`,
+  then `count` × 24-byte entries `height(8) + offset(8) + length(4) + flags(1) + pad(3)`,
+  then a trailing `crc32` over the whole file. Loaded into an in-memory dict at startup;
+  that dict is the runtime index.
+
+  **Reads — O(1).** The in-memory dict gives `(offset, length, flags)`; one seek + one read,
+  CRC-verified. `read_at_height(h)` / `tip_height()` / `is_pruned(h)` expose this.
+
+  **Crash safety.** `chain.blocks` is authoritative. A torn-tail *or* bit-flipped record is
+  caught by the CRC on recovery and the file is healed (truncated back to the last good
+  record). `append()` rolls a partial write back to the previous size, so a faulted write
+  never leaves a half-record. On startup the index is adopted only if its epoch matches the
+  data file *and* its `data_valid_size` fits; appends made after the last index flush are
+  folded in by a tail-scan of `chain.blocks`. A stale index left by a crash between
+  `replace_all`'s two renames has a mismatched epoch → discarded and rebuilt from the data
+  file. The index therefore holds no unique state; losing it can never corrupt or lose data.
+  (No `close()` is needed for correctness — a `kill -9` recovers cleanly.)
+
+  **Background compaction.** `start_compaction_worker()` runs a daemon that every
+  `compact_interval` seconds rewrites `chain.blocks` to one record per live height. Phase 1
+  reads from a snapshot **without** the write lock (appends keep running); phase 2 takes the
+  lock briefly, **aborts if a `replace_all` raced**, folds in appends made during phase 1,
+  then atomically swaps both files. `compact()` runs the same pass synchronously.
+
+  **Pruning.** Blocks more than `prune_after` (default 100) heights behind the tip are
+  rewritten as header-only records during compaction: the header is kept so the chain stays
+  verifiable (`verify_header` passes, `has_body` is False), the transaction bodies dropped.

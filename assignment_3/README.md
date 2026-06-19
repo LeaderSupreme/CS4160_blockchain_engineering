@@ -29,7 +29,7 @@ assignment_3/
 │  ├─ difficulty.py       #   Fixed / Dynamic (EMA) difficulty policies
 │  ├─ mempool.py          #   pending-transaction pool with eviction
 │  ├─ miner.py            #   multi-threaded nonce search
-│  └─ storage.py          #   InMemory / Write-Ahead-Log persistence
+│  └─ storage.py          #   InMemory / crash-safe IndexedStorage persistence
 │
 ├─ network/              # IPv8 communities and wire payloads → network/README.md
 │  ├─ blockchain_community.py   # the blockchain overlay (mining, sync, server queries)
@@ -38,7 +38,7 @@ assignment_3/
 │  └─ peers.py                  # trusted-peer (teammate / server) key filtering
 │
 ├─ test/                 # pytest unit tests → test/README.md
-└─ wal/                  # per-node Write-Ahead-Log chain storage → wal/README.md
+└─ wal/                  # per-node chain storage (chain.blocks + chain.index) → wal/README.md
 ```
 
 ## Run
@@ -61,9 +61,9 @@ uv run python -m assignment_3.client --start_fresh
 
 | Flag | Effect |
 |---|---|
-| `--key_path PATH` | IPv8 key file to load (default `assignment_3/key.pem`). The WAL dir is derived from the key file stem, so two nodes on one machine never clobber each other's chain. |
+| `--key_path PATH` | IPv8 key file to load (default `assignment_3/key.pem`). The storage dir is derived from the key file stem, so two nodes on one machine never clobber each other's chain. |
 | `--register` | Flag stored with `store_false` → registration is **on** by default; passing `--register` *disables* it and additionally starts the `RegisteringCommunity` overlay. |
-| `--start_fresh` | Delete the node's `chain.wal` before booting so it rebuilds from genesis. |
+| `--start_fresh` | Delete the node's `chain.blocks` / `chain.index` (and tmp files) before booting so it rebuilds from genesis. |
 
 ## Run the tests
 
@@ -108,8 +108,10 @@ uv run pytest assignment_3/test -v
 - **Pluggable difficulty** (`blockchain/difficulty.py`) — `FixedDifficultyPolicy` is used
   in production; `DynamicDifficultyPolicy` adjusts via an exponential moving average of
   block times (kept off because exponential work growth can freeze the tip).
-- **Crash-safe storage** (`blockchain/storage.py`) — `WALStorage` is a length-prefixed,
-  fsync'd Write-Ahead Log that replays on boot, ignores truncated tail records, and
-  compacts to one record per height. Only the main chain is persisted, not side forks.
+- **Crash-safe storage** (`blockchain/storage.py`) — `IndexedStorage` keeps an append-only
+  `chain.blocks` (source of truth, per-record CRC32) plus a rebuildable `chain.index` for
+  O(1) reads by height. A torn or bit-flipped tail is healed on boot; a background daemon
+  compacts dead bytes without blocking appends; old blocks are pruned to header-only while
+  staying verifiable. See [`blockchain/README.md`](blockchain/README.md#storagepy).
 - **Re-registration loop** (`network/registering_community.py`) — re-registers after the
   server's attempt window elapses until the group's pass is recorded.

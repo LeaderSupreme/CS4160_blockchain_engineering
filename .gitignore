@@ -12,7 +12,11 @@ wheels/
 **/.env
 **/**.pem
 nonce.txt
+# Node chain storage (runtime artifacts)
 **.wal
 **.tmp
+chain.blocks
+chain.index
+*.w
 
 /.vscode

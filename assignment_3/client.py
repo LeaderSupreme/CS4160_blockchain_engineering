@@ -7,7 +7,7 @@ from pathlib import Path
 from .blockchain.chain import Blockchain, make_genesis_block
 from .blockchain.difficulty import FixedDifficultyPolicy
 from .blockchain.mempool import Mempool
-from .blockchain.storage import WALStorage, InMemoryStorage, _WAL_FILENAME
+from .blockchain.storage import IndexedStorage, _DATA_FILENAME, _INDEX_FILENAME, _DATA_TMP, _INDEX_TMP
 from .network.peers import TrustedPeers
 
 from .config import PERSONAL_KEY_FILE, DEFAULT_DIFFICULTY
@@ -33,16 +33,20 @@ async def main():
     parser.add_argument("--start_fresh", action="store_true", required=False, help="Wheter or not to delete current chain storage")
     args = parser.parse_args()
 
-    # Per-key storage dir so multiple nodes on one machine don't share (clobber) a WAL.
+    # Per-key storage dir so multiple nodes on one machine don't share (clobber) a chain.
     storage_path = Path("assignment_3", "wal", Path(args.key_path).stem)
     if args.start_fresh:
-        path = Path(storage_path, _WAL_FILENAME)
-        if os.path.exists(path):
-            print(f"Delete the current chain storage at: {path}")
-            os.remove(path)
+        for name in (_DATA_FILENAME, _INDEX_FILENAME, _DATA_TMP, _INDEX_TMP):
+            path = Path(storage_path, name)
+            if os.path.exists(path):
+                print(f"Delete the current chain storage at: {path}")
+                os.remove(path)
 
+    # Crash-safe indexed store: O(1) reads, background compaction, header-only pruning.
+    storage = IndexedStorage(storage_path)
     # Single genesis only. Heights 1+ must be mined (real PoW) — seeding unmined blocks makes them fail
-    blockchain = Blockchain(make_genesis_block(DEFAULT_DIFFICULTY), storage=WALStorage(storage_path))
+    blockchain = Blockchain(make_genesis_block(DEFAULT_DIFFICULTY), storage=storage)
+    storage.start_compaction_worker()
     mempool = Mempool(max_size=1000)
     trusted_peers = TrustedPeers()
     # Fixed difficulty: DynamicDifficultyPolicy scales the *bit count* multiplicatively, but work
